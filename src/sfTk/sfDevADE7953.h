@@ -451,6 +451,18 @@ class sfDevADE7953
     /// @return True on success, false on error.
     bool enableZXLPF(bool enable);
 
+    /// @brief Enable or disable the high-pass filter on all channels.
+    /// @details The HPF removes DC offset from the current and voltage channels before
+    /// RMS computation. Should be enabled for accurate IRMS readings. Enabled by default
+    /// after power-on reset.
+    /// @param enable True to enable the HPF, false to disable.
+    /// @return True on success, false on error.
+    bool enableHPF(bool enable);
+
+    /// @brief Check whether the high-pass filter is currently enabled.
+    /// @return True if HPF is enabled, false if disabled or on error.
+    bool isHPFEnabled(void);
+
     /// @brief Read the line period derived from zero-crossing detection.
     /// @return Period register value, or 0 on error.
     uint16_t getPeriod(void);

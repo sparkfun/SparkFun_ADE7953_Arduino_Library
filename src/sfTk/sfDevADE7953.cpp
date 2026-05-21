@@ -467,6 +467,35 @@ bool sfDevADE7953::enableZXLPF(bool enable)
     return (_theBus->writeRegister(ksfADE7953RegConfig, config) == ksfTkErrOk);
 }
 
+bool sfDevADE7953::enableHPF(bool enable)
+{
+    if (!_theBus)
+        return false;
+
+    uint16_t config = 0;
+    if (_theBus->readRegister(ksfADE7953RegConfig, config) != ksfTkErrOk)
+        return false;
+
+    if (enable)
+        config |= ksfADE7953ConfigHPFEn;
+    else
+        config &= ~ksfADE7953ConfigHPFEn;
+
+    return (_theBus->writeRegister(ksfADE7953RegConfig, config) == ksfTkErrOk);
+}
+
+bool sfDevADE7953::isHPFEnabled(void)
+{
+    if (!_theBus)
+        return false;
+
+    uint16_t config = 0;
+    if (_theBus->readRegister(ksfADE7953RegConfig, config) != ksfTkErrOk)
+        return false;
+
+    return (config & ksfADE7953ConfigHPFEn) != 0;
+}
+
 uint16_t sfDevADE7953::getPeriod(void)
 {
     uint16_t value = 0;

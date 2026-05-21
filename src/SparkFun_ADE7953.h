@@ -102,7 +102,7 @@ class SfeADE7953ArdI2C : public sfDevADE7953
 
         // Call the base class begin() which sets the bus pointer,
         // configures byte order, and writes the optimized performance register.
-        if (sfDevADE7953::begin(&_theI2CBus) != ksfTkErrOk)
+        if (!sfDevADE7953::begin(&_theI2CBus))
             return false;
 
         // Verify the device is present and responding correctly.
