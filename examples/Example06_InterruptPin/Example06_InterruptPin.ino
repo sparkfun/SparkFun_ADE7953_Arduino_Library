@@ -1,21 +1,17 @@
 /*
   Example 06 - Interrupt Pin
 
-  This example demonstrates how to configure and use the ADE7953 interrupt
-  system. The IRQ pin on the board header is active low and can be connected
-  to a GPIO to detect events like overcurrent, zero-crossing, or cycle
-  completion without polling.
+  Configures and uses the ADE7953 interrupt system. The IRQ pin on the board header is
+  active low and can be connected to a GPIO to detect events like overcurrent,
+  zero-crossing, or cycle completion without polling.
 
-  This example sets up an overcurrent threshold on Channel A and enables
-  the overcurrent interrupt. When the threshold is exceeded, the IRQ pin
-  goes low and the interrupt status register reports which event fired.
+  This example sets an overcurrent threshold on Channel A and enables the overcurrent
+  interrupt. When the threshold is exceeded, the IRQ pin goes low and the interrupt status
+  register reports which event fired.
 
-  Interrupt bitmask constants (partial list):
-    ksfADE7953IrqOI      - Overcurrent detected
-    ksfADE7953IrqZXI     - Current zero-crossing detected
-    ksfADE7953IrqCycEnd  - Line cycle accumulation complete
-    ksfADE7953IrqSag     - Sag event occurred
-    ksfADE7953IrqReset   - Reset occurred (always enabled)
+  Interrupts are configured with the sfe_ade7953_irq_reg_t bitfield. Set the field for the
+  interrupt(s) you want, for example: irqEnable.oI = 1 (overcurrent), irqEnable.zxI = 1
+  (zero-crossing), irqEnable.cycEnd = 1 (line cycle complete).
 
   SparkFun Electronics
   Date: 2025
@@ -27,7 +23,7 @@
   QWIIC --> QWIIC
   IRQ pin --> Digital pin 3 (active low)
 
-  Serial.print it out at 115200 baud to serial monitor.
+  Open the Serial Monitor at 115200 baud.
 
   Feel like supporting our work? Buy a board from SparkFun!
   https://www.sparkfun.com/sparkfun-qwiic-current-sensor.html
@@ -51,39 +47,34 @@ void irqISR()
 void setup()
 {
     Serial.begin(115200);
-    delay(1000);
-    Serial.println("ADE7953 Example 06 - Interrupt Pin");
+    Serial.println("SparkFun ADE7953 Example 6 - Interrupt Pin");
 
     Wire.begin();
 
-    if (!mySensor.begin())
+    while (mySensor.begin() == false)
     {
-        Serial.println("ADE7953 not found. Please check wiring. Freezing...");
-        while (1)
-            delay(1000);
+        Serial.println("ADE7953 not connected, check your wiring!");
+        delay(1000);
     }
 
     Serial.println("ADE7953 connected!");
 
-    // Set PGA gain to 4x for the 5.6 ohm shunt resistor.
-    mySensor.setGainIA(ADE7953_PGA_GAIN_4);
-
     // --- Interrupt configuration ---
 
-    // Set an overcurrent threshold. This value is in raw ADC counts.
-    // Adjust this based on your expected current range.
+    // Set an overcurrent threshold (raw ADC counts). Adjust for your expected current range.
     uint32_t overcurrentThreshold = 0x100000;
     mySensor.setOvercurrentLevel(overcurrentThreshold);
     Serial.print("Overcurrent threshold set to: 0x");
     Serial.println(overcurrentThreshold, HEX);
 
-    // Clear any pending interrupt status by reading and resetting.
-    mySensor.readAndResetInterruptStatusA();
+    // Clear any pending interrupt status.
+    sfe_ade7953_irq_reg_t irqStatus = {};
+    mySensor.readAndResetInterruptStatusA(irqStatus);
 
     // Enable the overcurrent interrupt on Channel A.
-    // You can OR multiple bitmasks together to enable several interrupts:
-    //   ksfADE7953IrqOI | ksfADE7953IrqZXI | ksfADE7953IrqCycEnd
-    mySensor.setInterruptEnableA(ksfADE7953IrqOI);
+    sfe_ade7953_irq_reg_t irqEnable = {};
+    irqEnable.oI = 1;
+    mySensor.setInterruptEnableA(irqEnable);
     Serial.println("Overcurrent interrupt enabled on Channel A.");
 
     // Set up the external IRQ pin (active low, so trigger on FALLING).
@@ -99,9 +90,10 @@ void setup()
 
 void loop()
 {
-    // Print the current IRMS value for context.
-    uint32_t irms = mySensor.getIRmsA();
-    Serial.print("IRMS: ");
+    // Print the current IRMS value (raw) for context.
+    uint32_t irms = 0;
+    mySensor.getIRmsA(irms);
+    Serial.print("IRMS (raw): ");
     Serial.print(irms);
 
     // Check if the ISR flagged an interrupt.
@@ -110,21 +102,22 @@ void loop()
         irqFired = false;
 
         // Read and clear the interrupt status register.
-        uint32_t status = mySensor.readAndResetInterruptStatusA();
+        sfe_ade7953_irq_reg_t status = {};
+        mySensor.readAndResetInterruptStatusA(status);
 
         Serial.print("  ** IRQ! Status: 0x");
-        Serial.print(status, HEX);
+        Serial.print(status.word, HEX);
 
         // Decode which interrupt(s) fired.
-        if (status & ksfADE7953IrqOI)
+        if (status.oI)
             Serial.print(" [Overcurrent]");
-        if (status & ksfADE7953IrqZXI)
+        if (status.zxI)
             Serial.print(" [ZeroCrossing]");
-        if (status & ksfADE7953IrqCycEnd)
+        if (status.cycEnd)
             Serial.print(" [CycleEnd]");
-        if (status & ksfADE7953IrqSag)
+        if (status.sag)
             Serial.print(" [Sag]");
-        if (status & ksfADE7953IrqReset)
+        if (status.reset)
             Serial.print(" [Reset]");
 
         Serial.print(" **");

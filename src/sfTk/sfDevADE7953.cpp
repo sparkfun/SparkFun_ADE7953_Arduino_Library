@@ -19,767 +19,582 @@
 
 #include "sfDevADE7953.h"
 
-#define DEBUG_SERIAL_PRINTS (0)
-#if DEBUG_SERIAL_PRINTS
-#include "Arduino.h"
-#endif
-
 // ========================= Setup & Identity ===============================
 
-bool sfDevADE7953::begin(sfTkIBus *theBus)
+sfTkError_t sfDevADE7953::begin(sfTkIBus *theBus)
 {
-    // Nullptr check.
-    if (!_theBus && !theBus)
-        return false;
-
-    // Set the internal bus pointer, overriding current bus if it exists.
+    // Adopt the supplied bus if one was provided; otherwise keep any bus set by a prior begin().
     if (theBus != nullptr)
-        setCommunicationBus(theBus);
+        _theBus = theBus;
 
-    // ADE7953 is big-endian for both register addresses and data.
+    // We need a bus to talk to.
+    if (_theBus == nullptr)
+        return ksfTkErrBusNotInit;
+
+    // The ADE7953 is big-endian for both register addresses and data.
     _theBus->setByteOrder(sfTkByteOrder::BigEndian);
 
-    // Unlock the optimized performance register by writing 0xAD to register 0x0FE.
-    if (_theBus->writeRegister(ksfADE7953RegUnlock, ksfADE7953UnlockKey) != ksfTkErrOk)
-        return false;
+    // Make sure the device is actually present before writing any configuration. This avoids
+    // clobbering registers on a different device that happens to share the bus address.
+    if (!isConnected())
+        return ksfTkErrBusNoResponse;
+
+    // Apply the datasheet performance sequence and sensible defaults.
+    return applyDefaultConfig();
+}
+
+sfTkError_t sfDevADE7953::applyDefaultConfig(void)
+{
+    // Unlock the optimized performance register by writing the key to register 0x0FE.
+    sfTkError_t rc = _theBus->writeRegister(kRegUnlock, kUnlockKey);
+    if (rc != ksfTkErrOk)
+        return rc;
 
     // Write 0x0030 to register 0x120 for optimal performance per datasheet Table 1.
-    if (_theBus->writeRegister(ksfADE7953RegOptimize, ksfADE7953OptimizeValue) != ksfTkErrOk)
-        return false;
+    rc = _theBus->writeRegister(kRegOptimize, kOptimizeValue);
+    if (rc != ksfTkErrOk)
+        return rc;
 
-    return true;
+    // Default the current channels to 4x gain, matching the 5.6 ohm shunt on the Qwiic board, so a
+    // basic sketch works without any extra configuration.
+    rc = setGainIA(ADE7953_PGA_GAIN_4);
+    if (rc != ksfTkErrOk)
+        return rc;
+
+    rc = setGainIB(ADE7953_PGA_GAIN_4);
+    if (rc != ksfTkErrOk)
+        return rc;
+
+    // Enable the high-pass filter so IRMS readings are not corrupted by DC offset.
+    return enableHPF(true);
 }
 
-void sfDevADE7953::setCommunicationBus(sfTkIBus *theBus)
-{
-    _theBus = theBus;
-}
-
-uint8_t sfDevADE7953::getVersion(void)
+bool sfDevADE7953::isConnected(void)
 {
     uint8_t version = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegVersion, version) != ksfTkErrOk)
-        return 0;
-
-    return version;
-}
-
-bool sfDevADE7953::reset(void)
-{
-    if (!_theBus)
+    if (getVersion(version) != ksfTkErrOk)
         return false;
 
-    // Read current CONFIG, set the SWRST bit, and write back.
-    uint16_t config = 0;
-    if (_theBus->readRegister(ksfADE7953RegConfig, config) != ksfTkErrOk)
-        return false;
-
-    config |= ksfADE7953ConfigSWRst;
-
-    return (_theBus->writeRegister(ksfADE7953RegConfig, config) == ksfTkErrOk);
+    // A valid ADE7953 reports a nonzero silicon version.
+    return version != 0;
 }
 
-bool sfDevADE7953::setWriteProtect(uint8_t protect)
+sfTkError_t sfDevADE7953::getVersion(uint8_t &version)
 {
-    if (!_theBus)
-        return false;
-
-    return (_theBus->writeRegister(ksfADE7953RegWriteProtect, (uint8_t)(protect & 0x07)) == ksfTkErrOk);
+    return _theBus->readRegister(kRegVersion, version);
 }
 
-uint8_t sfDevADE7953::getWriteProtect(void)
+sfTkError_t sfDevADE7953::reset(void)
 {
-    uint8_t value = 0;
+    sfe_ade7953_config_reg_t config = {};
 
-    if (!_theBus)
-        return 0;
+    sfTkError_t rc = _theBus->readRegister(kRegConfig, config.word);
+    if (rc != ksfTkErrOk)
+        return rc;
 
-    if (_theBus->readRegister(ksfADE7953RegWriteProtect, value) != ksfTkErrOk)
-        return 0;
+    config.swRst = 1;
 
-    return value & 0x07;
+    rc = _theBus->writeRegister(kRegConfig, config.word);
+    if (rc != ksfTkErrOk)
+        return rc;
+
+    // A software reset returns every register to its power-on default, including the OPTIMIZE
+    // register, so re-apply the performance sequence and default configuration. Callers that reset
+    // a running device may wish to allow a short settling delay before resuming reads.
+    return applyDefaultConfig();
+}
+
+sfTkError_t sfDevADE7953::setWriteProtect(uint8_t protect)
+{
+    return _theBus->writeRegister(kRegWriteProtect, (uint8_t)(protect & 0x07));
+}
+
+sfTkError_t sfDevADE7953::getWriteProtect(uint8_t &protect)
+{
+    sfTkError_t rc = _theBus->readRegister(kRegWriteProtect, protect);
+    protect &= 0x07;
+    return rc;
 }
 
 // ======================== PGA Gain Configuration ==========================
 
-bool sfDevADE7953::setGainIA(sfe_ade7953_pga_gain_t gain)
+float sfDevADE7953::pgaGainToMultiplier(sfe_ade7953_pga_gain_t gain)
 {
-    if (!_theBus)
-        return false;
-
-    return (_theBus->writeRegister(ksfADE7953RegPgaIA, (uint8_t)(gain & 0x07)) == ksfTkErrOk);
+    switch (gain)
+    {
+    case ADE7953_PGA_GAIN_1:
+        return 1.0f;
+    case ADE7953_PGA_GAIN_2:
+        return 2.0f;
+    case ADE7953_PGA_GAIN_4:
+        return 4.0f;
+    case ADE7953_PGA_GAIN_8:
+        return 8.0f;
+    case ADE7953_PGA_GAIN_16:
+        return 16.0f;
+    case ADE7953_PGA_GAIN_22:
+        return 22.0f;
+    default:
+        return 1.0f;
+    }
 }
 
-sfe_ade7953_pga_gain_t sfDevADE7953::getGainIA(void)
+sfTkError_t sfDevADE7953::setGainIA(sfe_ade7953_pga_gain_t gain)
+{
+    return _theBus->writeRegister(kRegPgaIA, (uint8_t)(gain & 0x07));
+}
+
+sfTkError_t sfDevADE7953::getGainIA(sfe_ade7953_pga_gain_t &gain)
 {
     uint8_t value = 0;
-
-    if (!_theBus)
-        return ADE7953_PGA_GAIN_1;
-
-    if (_theBus->readRegister(ksfADE7953RegPgaIA, value) != ksfTkErrOk)
-        return ADE7953_PGA_GAIN_1;
-
-    return (sfe_ade7953_pga_gain_t)(value & 0x07);
+    sfTkError_t rc = _theBus->readRegister(kRegPgaIA, value);
+    gain = (sfe_ade7953_pga_gain_t)(value & 0x07);
+    return rc;
 }
 
-bool sfDevADE7953::setGainIB(sfe_ade7953_pga_gain_t gain)
+sfTkError_t sfDevADE7953::setGainIB(sfe_ade7953_pga_gain_t gain)
 {
-    if (!_theBus)
-        return false;
-
-    return (_theBus->writeRegister(ksfADE7953RegPgaIB, (uint8_t)(gain & 0x07)) == ksfTkErrOk);
+    return _theBus->writeRegister(kRegPgaIB, (uint8_t)(gain & 0x07));
 }
 
-sfe_ade7953_pga_gain_t sfDevADE7953::getGainIB(void)
+sfTkError_t sfDevADE7953::getGainIB(sfe_ade7953_pga_gain_t &gain)
 {
     uint8_t value = 0;
-
-    if (!_theBus)
-        return ADE7953_PGA_GAIN_1;
-
-    if (_theBus->readRegister(ksfADE7953RegPgaIB, value) != ksfTkErrOk)
-        return ADE7953_PGA_GAIN_1;
-
-    return (sfe_ade7953_pga_gain_t)(value & 0x07);
+    sfTkError_t rc = _theBus->readRegister(kRegPgaIB, value);
+    gain = (sfe_ade7953_pga_gain_t)(value & 0x07);
+    return rc;
 }
 
-bool sfDevADE7953::setGainV(sfe_ade7953_pga_gain_t gain)
+sfTkError_t sfDevADE7953::setGainV(sfe_ade7953_pga_gain_t gain)
 {
-    if (!_theBus)
-        return false;
+    // Gain code 5 (22x) is only valid for the current channels, not the voltage channel.
+    if (gain == ADE7953_PGA_GAIN_22)
+        return ksfTkErrFail;
 
-    return (_theBus->writeRegister(ksfADE7953RegPgaV, (uint8_t)(gain & 0x07)) == ksfTkErrOk);
+    return _theBus->writeRegister(kRegPgaV, (uint8_t)(gain & 0x07));
 }
 
-sfe_ade7953_pga_gain_t sfDevADE7953::getGainV(void)
+sfTkError_t sfDevADE7953::getGainV(sfe_ade7953_pga_gain_t &gain)
 {
     uint8_t value = 0;
-
-    if (!_theBus)
-        return ADE7953_PGA_GAIN_1;
-
-    if (_theBus->readRegister(ksfADE7953RegPgaV, value) != ksfTkErrOk)
-        return ADE7953_PGA_GAIN_1;
-
-    return (sfe_ade7953_pga_gain_t)(value & 0x07);
+    sfTkError_t rc = _theBus->readRegister(kRegPgaV, value);
+    gain = (sfe_ade7953_pga_gain_t)(value & 0x07);
+    return rc;
 }
 
-bool sfDevADE7953::setDigitalGainIA(uint32_t gain)
+sfTkError_t sfDevADE7953::setDigitalGainIA(uint32_t gain)
 {
-    if (!_theBus)
-        return false;
-
-    return (_theBus->writeRegister(ksfADE7953RegAIGain, gain) == ksfTkErrOk);
+    return _theBus->writeRegister(kRegAIGain, gain);
 }
 
-uint32_t sfDevADE7953::getDigitalGainIA(void)
+sfTkError_t sfDevADE7953::setDigitalGainIA(float multiplier)
 {
-    uint32_t value = 0;
+    if (multiplier <= 0.0f)
+        return ksfTkErrFail;
 
-    if (!_theBus)
-        return 0;
+    uint32_t code = (uint32_t)((float)kDigitalGainUnity * multiplier + 0.5f);
+    if (code > kDigitalGainMax)
+        return ksfTkErrFail;
 
-    if (_theBus->readRegister(ksfADE7953RegAIGain, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return setDigitalGainIA(code);
 }
 
-bool sfDevADE7953::setDigitalGainIB(uint32_t gain)
+sfTkError_t sfDevADE7953::getDigitalGainIA(uint32_t &gain)
 {
-    if (!_theBus)
-        return false;
-
-    return (_theBus->writeRegister(ksfADE7953RegBIGain, gain) == ksfTkErrOk);
+    return _theBus->readRegister(kRegAIGain, gain);
 }
 
-uint32_t sfDevADE7953::getDigitalGainIB(void)
+sfTkError_t sfDevADE7953::getDigitalGainIA(float &multiplier)
 {
-    uint32_t value = 0;
+    uint32_t code = 0;
+    sfTkError_t rc = getDigitalGainIA(code);
+    multiplier = (float)code / (float)kDigitalGainUnity;
+    return rc;
+}
 
-    if (!_theBus)
-        return 0;
+sfTkError_t sfDevADE7953::setDigitalGainIB(uint32_t gain)
+{
+    return _theBus->writeRegister(kRegBIGain, gain);
+}
 
-    if (_theBus->readRegister(ksfADE7953RegBIGain, value) != ksfTkErrOk)
-        return 0;
+sfTkError_t sfDevADE7953::setDigitalGainIB(float multiplier)
+{
+    if (multiplier <= 0.0f)
+        return ksfTkErrFail;
 
-    return value;
+    uint32_t code = (uint32_t)((float)kDigitalGainUnity * multiplier + 0.5f);
+    if (code > kDigitalGainMax)
+        return ksfTkErrFail;
+
+    return setDigitalGainIB(code);
+}
+
+sfTkError_t sfDevADE7953::getDigitalGainIB(uint32_t &gain)
+{
+    return _theBus->readRegister(kRegBIGain, gain);
+}
+
+sfTkError_t sfDevADE7953::getDigitalGainIB(float &multiplier)
+{
+    uint32_t code = 0;
+    sfTkError_t rc = getDigitalGainIB(code);
+    multiplier = (float)code / (float)kDigitalGainUnity;
+    return rc;
 }
 
 // ======================= Current Measurement ==============================
 
-uint32_t sfDevADE7953::getIRmsA(void)
+sfTkError_t sfDevADE7953::getIRmsA(uint32_t &value)
 {
-    uint32_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegIRmsA, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return _theBus->readRegister(kRegIRmsA, value);
 }
 
-uint32_t sfDevADE7953::getIRmsB(void)
+sfTkError_t sfDevADE7953::getIRmsB(uint32_t &value)
 {
-    uint32_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegIRmsB, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return _theBus->readRegister(kRegIRmsB, value);
 }
 
-int32_t sfDevADE7953::getInstantaneousIA(void)
+sfTkError_t sfDevADE7953::getCurrentA(float &amps)
 {
     uint32_t raw = 0;
+    sfTkError_t rc = getIRmsA(raw);
+    if (rc != ksfTkErrOk)
+        return rc;
 
-    if (!_theBus)
-        return 0;
+    sfe_ade7953_pga_gain_t gain = ADE7953_PGA_GAIN_1;
+    rc = getGainIA(gain);
+    if (rc != ksfTkErrOk)
+        return rc;
 
-    if (_theBus->readRegister(ksfADE7953RegIA, raw) != ksfTkErrOk)
-        return 0;
-
-    // Sign-extend from 24-bit to 32-bit. The upper 8 bits from the 0x3xx read are
-    // already sign-extended by the ADE7953, so we can cast directly.
-    return (int32_t)raw;
+    // Pin voltage RMS = raw / fullScaleCode * (fullScaleVrms / pgaGain)
+    // Secondary current  = pinVrms / burdenResistor
+    // Primary current    = secondaryCurrent * ctRatio
+    float fullScaleAmps = (_fullScaleVrms / pgaGainToMultiplier(gain)) / _burdenResistor * _ctRatio;
+    amps = (float)raw / _fullScaleCode * fullScaleAmps;
+    return ksfTkErrOk;
 }
 
-int32_t sfDevADE7953::getInstantaneousIB(void)
+sfTkError_t sfDevADE7953::getCurrentB(float &amps)
 {
     uint32_t raw = 0;
+    sfTkError_t rc = getIRmsB(raw);
+    if (rc != ksfTkErrOk)
+        return rc;
 
-    if (!_theBus)
-        return 0;
+    sfe_ade7953_pga_gain_t gain = ADE7953_PGA_GAIN_1;
+    rc = getGainIB(gain);
+    if (rc != ksfTkErrOk)
+        return rc;
 
-    if (_theBus->readRegister(ksfADE7953RegIB, raw) != ksfTkErrOk)
-        return 0;
+    float fullScaleAmps = (_fullScaleVrms / pgaGainToMultiplier(gain)) / _burdenResistor * _ctRatio;
+    amps = (float)raw / _fullScaleCode * fullScaleAmps;
+    return ksfTkErrOk;
+}
 
-    return (int32_t)raw;
+sfTkError_t sfDevADE7953::getInstantaneousIA(int32_t &value)
+{
+    uint32_t raw = 0;
+    sfTkError_t rc = _theBus->readRegister(kRegIA, raw);
+
+    // The upper 8 bits from the 0x3xx read are already sign-extended by the ADE7953, so a plain
+    // conversion to a signed 32-bit value preserves the sign.
+    value = (int32_t)raw;
+    return rc;
+}
+
+sfTkError_t sfDevADE7953::getInstantaneousIB(int32_t &value)
+{
+    uint32_t raw = 0;
+    sfTkError_t rc = _theBus->readRegister(kRegIB, raw);
+    value = (int32_t)raw;
+    return rc;
+}
+
+// =================== Current Conversion Calibration =======================
+
+void sfDevADE7953::setCurrentTransformerRatio(float ratio)
+{
+    _ctRatio = ratio;
+}
+
+float sfDevADE7953::getCurrentTransformerRatio(void)
+{
+    return _ctRatio;
+}
+
+void sfDevADE7953::setBurdenResistor(float ohms)
+{
+    _burdenResistor = ohms;
+}
+
+float sfDevADE7953::getBurdenResistor(void)
+{
+    return _burdenResistor;
 }
 
 // ======================== Peak Detection ==================================
 
-uint32_t sfDevADE7953::getPeakIA(void)
+sfTkError_t sfDevADE7953::getPeakIA(uint32_t &value)
 {
-    uint32_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegIAPeak, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return _theBus->readRegister(kRegIAPeak, value);
 }
 
-uint32_t sfDevADE7953::getPeakIB(void)
+sfTkError_t sfDevADE7953::getPeakIB(uint32_t &value)
 {
-    uint32_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegIBPeak, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return _theBus->readRegister(kRegIBPeak, value);
 }
 
-uint32_t sfDevADE7953::readAndResetPeakIA(void)
+sfTkError_t sfDevADE7953::readAndResetPeakIA(uint32_t &value)
 {
-    uint32_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    // Reading RSTIAPEAK atomically reads the peak value and clears the register.
-    if (_theBus->readRegister(ksfADE7953RegRstIAPeak, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    // Reading RSTIAPEAK returns the peak value and clears the register in a single operation.
+    return _theBus->readRegister(kRegRstIAPeak, value);
 }
 
-uint32_t sfDevADE7953::readAndResetPeakIB(void)
+sfTkError_t sfDevADE7953::readAndResetPeakIB(uint32_t &value)
 {
-    uint32_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegRstIBPeak, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return _theBus->readRegister(kRegRstIBPeak, value);
 }
 
-bool sfDevADE7953::setOvercurrentLevel(uint32_t level)
+sfTkError_t sfDevADE7953::setOvercurrentLevel(uint32_t level)
 {
-    if (!_theBus)
-        return false;
-
-    return (_theBus->writeRegister(ksfADE7953RegOiLvl, level) == ksfTkErrOk);
+    return _theBus->writeRegister(kRegOiLvl, level);
 }
 
-uint32_t sfDevADE7953::getOvercurrentLevel(void)
+sfTkError_t sfDevADE7953::getOvercurrentLevel(uint32_t &level)
 {
-    uint32_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegOiLvl, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return _theBus->readRegister(kRegOiLvl, level);
 }
 
 // ====================== Calibration & Offset ==============================
 
-bool sfDevADE7953::setIRmsOffsetA(int32_t offset)
+sfTkError_t sfDevADE7953::setIRmsOffsetA(int32_t offset)
 {
-    if (!_theBus)
-        return false;
-
-    return (_theBus->writeRegister(ksfADE7953RegAIRmsOS, (uint32_t)offset) == ksfTkErrOk);
+    return _theBus->writeRegister(kRegAIRmsOS, (uint32_t)offset);
 }
 
-int32_t sfDevADE7953::getIRmsOffsetA(void)
+sfTkError_t sfDevADE7953::getIRmsOffsetA(int32_t &offset)
 {
     uint32_t raw = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegAIRmsOS, raw) != ksfTkErrOk)
-        return 0;
-
-    return (int32_t)raw;
+    sfTkError_t rc = _theBus->readRegister(kRegAIRmsOS, raw);
+    offset = (int32_t)raw;
+    return rc;
 }
 
-bool sfDevADE7953::setIRmsOffsetB(int32_t offset)
+sfTkError_t sfDevADE7953::setIRmsOffsetB(int32_t offset)
 {
-    if (!_theBus)
-        return false;
-
-    return (_theBus->writeRegister(ksfADE7953RegBIRmsOS, (uint32_t)offset) == ksfTkErrOk);
+    return _theBus->writeRegister(kRegBIRmsOS, (uint32_t)offset);
 }
 
-int32_t sfDevADE7953::getIRmsOffsetB(void)
+sfTkError_t sfDevADE7953::getIRmsOffsetB(int32_t &offset)
 {
     uint32_t raw = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegBIRmsOS, raw) != ksfTkErrOk)
-        return 0;
-
-    return (int32_t)raw;
+    sfTkError_t rc = _theBus->readRegister(kRegBIRmsOS, raw);
+    offset = (int32_t)raw;
+    return rc;
 }
 
 // ======================= Zero-Crossing (ZX_I) =============================
 
-bool sfDevADE7953::setZXISource(bool useChannelB)
+sfTkError_t sfDevADE7953::setZXISourceChannel(bool useChannelB)
 {
-    if (!_theBus)
-        return false;
+    sfe_ade7953_config_reg_t config = {};
+    sfTkError_t rc = _theBus->readRegister(kRegConfig, config.word);
+    if (rc != ksfTkErrOk)
+        return rc;
 
-    uint16_t config = 0;
-    if (_theBus->readRegister(ksfADE7953RegConfig, config) != ksfTkErrOk)
-        return false;
+    config.zxI = useChannelB ? 1 : 0;
 
-    if (useChannelB)
-        config |= ksfADE7953ConfigZXI;
-    else
-        config &= ~ksfADE7953ConfigZXI;
-
-    return (_theBus->writeRegister(ksfADE7953RegConfig, config) == ksfTkErrOk);
+    return _theBus->writeRegister(kRegConfig, config.word);
 }
 
-bool sfDevADE7953::getZXISource(void)
+sfTkError_t sfDevADE7953::getZXISourceChannel(bool &useChannelB)
 {
-    uint16_t config = 0;
-
-    if (!_theBus)
-        return false;
-
-    if (_theBus->readRegister(ksfADE7953RegConfig, config) != ksfTkErrOk)
-        return false;
-
-    return (config & ksfADE7953ConfigZXI) != 0;
+    sfe_ade7953_config_reg_t config = {};
+    sfTkError_t rc = _theBus->readRegister(kRegConfig, config.word);
+    useChannelB = config.zxI != 0;
+    return rc;
 }
 
-bool sfDevADE7953::setZXEdge(sfe_ade7953_zx_edge_t edge)
+sfTkError_t sfDevADE7953::setZXEdge(sfe_ade7953_zx_edge_t edge)
 {
-    if (!_theBus)
-        return false;
+    sfe_ade7953_config_reg_t config = {};
+    sfTkError_t rc = _theBus->readRegister(kRegConfig, config.word);
+    if (rc != ksfTkErrOk)
+        return rc;
 
-    uint16_t config = 0;
-    if (_theBus->readRegister(ksfADE7953RegConfig, config) != ksfTkErrOk)
-        return false;
+    config.zxEdge = (uint16_t)edge;
 
-    // Clear the ZX_EDGE bits [13:12] and set the new value.
-    config &= ~ksfADE7953ConfigZXEdgeMask;
-    config |= ((uint16_t)edge << ksfADE7953ConfigZXEdgeShift) & ksfADE7953ConfigZXEdgeMask;
-
-    return (_theBus->writeRegister(ksfADE7953RegConfig, config) == ksfTkErrOk);
+    return _theBus->writeRegister(kRegConfig, config.word);
 }
 
-sfe_ade7953_zx_edge_t sfDevADE7953::getZXEdge(void)
+sfTkError_t sfDevADE7953::getZXEdge(sfe_ade7953_zx_edge_t &edge)
 {
-    uint16_t config = 0;
-
-    if (!_theBus)
-        return ADE7953_ZX_EDGE_BOTH;
-
-    if (_theBus->readRegister(ksfADE7953RegConfig, config) != ksfTkErrOk)
-        return ADE7953_ZX_EDGE_BOTH;
-
-    return (sfe_ade7953_zx_edge_t)((config & ksfADE7953ConfigZXEdgeMask) >> ksfADE7953ConfigZXEdgeShift);
+    sfe_ade7953_config_reg_t config = {};
+    sfTkError_t rc = _theBus->readRegister(kRegConfig, config.word);
+    edge = (sfe_ade7953_zx_edge_t)config.zxEdge;
+    return rc;
 }
 
-bool sfDevADE7953::enableZXLPF(bool enable)
+sfTkError_t sfDevADE7953::enableZXLPF(bool enable)
 {
-    if (!_theBus)
-        return false;
+    sfe_ade7953_config_reg_t config = {};
+    sfTkError_t rc = _theBus->readRegister(kRegConfig, config.word);
+    if (rc != ksfTkErrOk)
+        return rc;
 
-    uint16_t config = 0;
-    if (_theBus->readRegister(ksfADE7953RegConfig, config) != ksfTkErrOk)
-        return false;
+    // Note: the ZXLPF bit is inverted — 0 means the LPF is ENABLED, 1 means DISABLED.
+    config.zxLPF = enable ? 0 : 1;
 
-    // Note: CONFIG bit 6 (ZXLPF) = 0 means LPF is ENABLED, 1 means DISABLED.
-    // So we invert the user's intent.
-    if (enable)
-        config &= ~ksfADE7953ConfigZXLPF; // Clear bit to enable LPF
-    else
-        config |= ksfADE7953ConfigZXLPF; // Set bit to disable LPF
-
-    return (_theBus->writeRegister(ksfADE7953RegConfig, config) == ksfTkErrOk);
+    return _theBus->writeRegister(kRegConfig, config.word);
 }
 
-bool sfDevADE7953::enableHPF(bool enable)
+sfTkError_t sfDevADE7953::enableHPF(bool enable)
 {
-    if (!_theBus)
-        return false;
+    sfe_ade7953_config_reg_t config = {};
+    sfTkError_t rc = _theBus->readRegister(kRegConfig, config.word);
+    if (rc != ksfTkErrOk)
+        return rc;
 
-    uint16_t config = 0;
-    if (_theBus->readRegister(ksfADE7953RegConfig, config) != ksfTkErrOk)
-        return false;
+    config.hpfEn = enable ? 1 : 0;
 
-    if (enable)
-        config |= ksfADE7953ConfigHPFEn;
-    else
-        config &= ~ksfADE7953ConfigHPFEn;
-
-    return (_theBus->writeRegister(ksfADE7953RegConfig, config) == ksfTkErrOk);
+    return _theBus->writeRegister(kRegConfig, config.word);
 }
 
-bool sfDevADE7953::isHPFEnabled(void)
+sfTkError_t sfDevADE7953::isHPFEnabled(bool &enabled)
 {
-    if (!_theBus)
-        return false;
-
-    uint16_t config = 0;
-    if (_theBus->readRegister(ksfADE7953RegConfig, config) != ksfTkErrOk)
-        return false;
-
-    return (config & ksfADE7953ConfigHPFEn) != 0;
+    sfe_ade7953_config_reg_t config = {};
+    sfTkError_t rc = _theBus->readRegister(kRegConfig, config.word);
+    enabled = config.hpfEn != 0;
+    return rc;
 }
 
-uint16_t sfDevADE7953::getPeriod(void)
+sfTkError_t sfDevADE7953::getPeriod(uint16_t &period)
 {
-    uint16_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegPeriod, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return _theBus->readRegister(kRegPeriod, period);
 }
 
 // =========================== Interrupts ===================================
 
-bool sfDevADE7953::setInterruptEnableA(uint32_t mask)
+sfTkError_t sfDevADE7953::setInterruptEnableA(sfe_ade7953_irq_reg_t mask)
 {
-    if (!_theBus)
-        return false;
-
-    return (_theBus->writeRegister(ksfADE7953RegIrqEnA, mask) == ksfTkErrOk);
+    return _theBus->writeRegister(kRegIrqEnA, mask.word);
 }
 
-uint32_t sfDevADE7953::getInterruptEnableA(void)
+sfTkError_t sfDevADE7953::getInterruptEnableA(sfe_ade7953_irq_reg_t &mask)
 {
-    uint32_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegIrqEnA, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return _theBus->readRegister(kRegIrqEnA, mask.word);
 }
 
-uint32_t sfDevADE7953::getInterruptStatusA(void)
+sfTkError_t sfDevADE7953::getInterruptStatusA(sfe_ade7953_irq_reg_t &status)
 {
-    uint32_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegIrqStatA, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return _theBus->readRegister(kRegIrqStatA, status.word);
 }
 
-uint32_t sfDevADE7953::readAndResetInterruptStatusA(void)
+sfTkError_t sfDevADE7953::readAndResetInterruptStatusA(sfe_ade7953_irq_reg_t &status)
 {
-    uint32_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    // Reading RSTIRQSTATA atomically reads status and clears the flags.
-    if (_theBus->readRegister(ksfADE7953RegRstIrqStatA, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    // Reading RSTIRQSTATA returns the status and clears the flags in a single operation.
+    return _theBus->readRegister(kRegRstIrqStatA, status.word);
 }
 
-bool sfDevADE7953::setInterruptEnableB(uint32_t mask)
+sfTkError_t sfDevADE7953::setInterruptEnableB(sfe_ade7953_irq_reg_t mask)
 {
-    if (!_theBus)
-        return false;
-
-    return (_theBus->writeRegister(ksfADE7953RegIrqEnB, mask) == ksfTkErrOk);
+    return _theBus->writeRegister(kRegIrqEnB, mask.word);
 }
 
-uint32_t sfDevADE7953::getInterruptEnableB(void)
+sfTkError_t sfDevADE7953::getInterruptEnableB(sfe_ade7953_irq_reg_t &mask)
 {
-    uint32_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegIrqEnB, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return _theBus->readRegister(kRegIrqEnB, mask.word);
 }
 
-uint32_t sfDevADE7953::getInterruptStatusB(void)
+sfTkError_t sfDevADE7953::getInterruptStatusB(sfe_ade7953_irq_reg_t &status)
 {
-    uint32_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegIrqStatB, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return _theBus->readRegister(kRegIrqStatB, status.word);
 }
 
-uint32_t sfDevADE7953::readAndResetInterruptStatusB(void)
+sfTkError_t sfDevADE7953::readAndResetInterruptStatusB(sfe_ade7953_irq_reg_t &status)
 {
-    uint32_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegRstIrqStatB, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return _theBus->readRegister(kRegRstIrqStatB, status.word);
 }
 
 // ========================= No-Load Detection ==============================
 
-bool sfDevADE7953::setNoLoadDisable(uint8_t mask)
+sfTkError_t sfDevADE7953::setNoLoadDisable(sfe_ade7953_disnoload_reg_t mask)
 {
-    if (!_theBus)
-        return false;
-
-    return (_theBus->writeRegister(ksfADE7953RegDisNoLoad, (uint8_t)(mask & 0x07)) == ksfTkErrOk);
+    return _theBus->writeRegister(kRegDisNoLoad, mask.byte);
 }
 
-uint8_t sfDevADE7953::getNoLoadDisable(void)
+sfTkError_t sfDevADE7953::getNoLoadDisable(sfe_ade7953_disnoload_reg_t &mask)
 {
-    uint8_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegDisNoLoad, value) != ksfTkErrOk)
-        return 0;
-
-    return value & 0x07;
+    return _theBus->readRegister(kRegDisNoLoad, mask.byte);
 }
 
 // ====================== Line Cycle Accumulation ===========================
 
-bool sfDevADE7953::setLineCycleMode(uint8_t mode)
+sfTkError_t sfDevADE7953::setLineCycleMode(sfe_ade7953_lcycmode_reg_t mode)
 {
-    if (!_theBus)
-        return false;
-
-    return (_theBus->writeRegister(ksfADE7953RegLCycMode, mode) == ksfTkErrOk);
+    return _theBus->writeRegister(kRegLCycMode, mode.byte);
 }
 
-uint8_t sfDevADE7953::getLineCycleMode(void)
+sfTkError_t sfDevADE7953::getLineCycleMode(sfe_ade7953_lcycmode_reg_t &mode)
 {
-    uint8_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegLCycMode, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return _theBus->readRegister(kRegLCycMode, mode.byte);
 }
 
-bool sfDevADE7953::setLineCycleCount(uint16_t halfCycles)
+sfTkError_t sfDevADE7953::setLineCycleCount(uint16_t halfCycles)
 {
-    if (!_theBus)
-        return false;
-
-    return (_theBus->writeRegister(ksfADE7953RegLineCyc, halfCycles) == ksfTkErrOk);
+    return _theBus->writeRegister(kRegLineCyc, halfCycles);
 }
 
-uint16_t sfDevADE7953::getLineCycleCount(void)
+sfTkError_t sfDevADE7953::getLineCycleCount(uint16_t &halfCycles)
 {
-    uint16_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegLineCyc, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return _theBus->readRegister(kRegLineCyc, halfCycles);
 }
 
 // ========================= Sag Detection ==================================
 
-bool sfDevADE7953::setSagCycles(uint8_t cycles)
+sfTkError_t sfDevADE7953::setSagCycles(uint8_t cycles)
 {
-    if (!_theBus)
-        return false;
-
-    return (_theBus->writeRegister(ksfADE7953RegSagCyc, cycles) == ksfTkErrOk);
+    return _theBus->writeRegister(kRegSagCyc, cycles);
 }
 
-uint8_t sfDevADE7953::getSagCycles(void)
+sfTkError_t sfDevADE7953::getSagCycles(uint8_t &cycles)
 {
-    uint8_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegSagCyc, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return _theBus->readRegister(kRegSagCyc, cycles);
 }
 
-bool sfDevADE7953::setSagLevel(uint32_t level)
+sfTkError_t sfDevADE7953::setSagLevel(uint32_t level)
 {
-    if (!_theBus)
-        return false;
-
-    return (_theBus->writeRegister(ksfADE7953RegSagLvl, level) == ksfTkErrOk);
+    return _theBus->writeRegister(kRegSagLvl, level);
 }
 
-uint32_t sfDevADE7953::getSagLevel(void)
+sfTkError_t sfDevADE7953::getSagLevel(uint32_t &level)
 {
-    uint32_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegSagLvl, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return _theBus->readRegister(kRegSagLvl, level);
 }
 
 // ========================== Diagnostics ===================================
 
-uint8_t sfDevADE7953::getLastOperation(void)
+sfTkError_t sfDevADE7953::getLastOperation(uint8_t &op)
 {
-    uint8_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegLastOp, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return _theBus->readRegister(kRegLastOp, op);
 }
 
-uint16_t sfDevADE7953::getLastAddress(void)
+sfTkError_t sfDevADE7953::getLastAddress(uint16_t &address)
 {
-    uint16_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegLastAdd, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return _theBus->readRegister(kRegLastAdd, address);
 }
 
-uint8_t sfDevADE7953::getLastData8(void)
+sfTkError_t sfDevADE7953::getLastData8(uint8_t &data)
 {
-    uint8_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegLastRwData8, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return _theBus->readRegister(kRegLastRwData8, data);
 }
 
-uint16_t sfDevADE7953::getLastData16(void)
+sfTkError_t sfDevADE7953::getLastData16(uint16_t &data)
 {
-    uint16_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegLastRwData16, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return _theBus->readRegister(kRegLastRwData16, data);
 }
 
-uint32_t sfDevADE7953::getLastData32(void)
+sfTkError_t sfDevADE7953::getLastData32(uint32_t &data)
 {
-    uint32_t value = 0;
-
-    if (!_theBus)
-        return 0;
-
-    if (_theBus->readRegister(ksfADE7953RegLastRwData32, value) != ksfTkErrOk)
-        return 0;
-
-    return value;
+    return _theBus->readRegister(kRegLastRwData32, data);
 }

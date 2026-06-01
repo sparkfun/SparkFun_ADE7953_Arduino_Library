@@ -1,17 +1,15 @@
 /*
   Example 04 - Peak Detection
 
-  This example demonstrates how to read peak current values from Channel A.
-  The ADE7953 continuously tracks the highest instantaneous current sample
-  since the last reset. This is useful for detecting transient events like
-  motor startup surges or inrush current.
+  Reads peak current values from Channel A. The ADE7953 continuously tracks the highest
+  instantaneous current sample since the last reset, which is useful for detecting transient
+  events like motor startup surges or inrush current.
 
   Two methods are available:
-    getPeakIA()           - Reads the peak value (does NOT clear it)
-    readAndResetPeakIA()  - Reads the peak value AND clears it atomically
+    getPeakIA()           - Reads the running peak (does NOT clear it)
+    readAndResetPeakIA()  - Reads the peak value AND clears it in a single operation
 
-  This example uses readAndResetPeakIA() to track the peak current over
-  fixed intervals.
+  This example reports the peak current over fixed two-second intervals.
 
   SparkFun Electronics
   Date: 2025
@@ -22,7 +20,7 @@
   IoT RedBoard --> ADE7953
   QWIIC --> QWIIC
 
-  Serial.print it out at 115200 baud to serial monitor.
+  Open the Serial Monitor at 115200 baud.
 
   Feel like supporting our work? Buy a board from SparkFun!
   https://www.sparkfun.com/sparkfun-qwiic-current-sensor.html
@@ -39,48 +37,45 @@ unsigned long lastResetTime = 0;
 void setup()
 {
     Serial.begin(115200);
-    delay(1000);
-    Serial.println("ADE7953 Example 04 - Peak Detection");
+    Serial.println("SparkFun ADE7953 Example 4 - Peak Detection");
 
     Wire.begin();
 
-    if (!mySensor.begin())
+    while (mySensor.begin() == false)
     {
-        Serial.println("ADE7953 not found. Please check wiring. Freezing...");
-        while (1)
-            delay(1000);
+        Serial.println("ADE7953 not connected, check your wiring!");
+        delay(1000);
     }
 
     Serial.println("ADE7953 connected!");
-
-    // Set PGA gain to 4x for the 5.6 ohm shunt resistor.
-    mySensor.setGainIA(ADE7953_PGA_GAIN_4);
-
     Serial.println("Reading peak current every 2 seconds...");
     Serial.println();
 
-    // Clear any stale peak value by doing an initial read-and-reset.
-    mySensor.readAndResetPeakIA();
+    // Clear any stale peak value with an initial read-and-reset.
+    uint32_t discard = 0;
+    mySensor.readAndResetPeakIA(discard);
     lastResetTime = millis();
 }
 
 void loop()
 {
-    // Also print the current IRMS for context.
-    uint32_t irms = mySensor.getIRmsA();
-
-    Serial.print("IRMS: ");
+    // Print the current IRMS value (raw) for context.
+    uint32_t irms = 0;
+    mySensor.getIRmsA(irms);
+    Serial.print("IRMS (raw): ");
     Serial.print(irms);
 
     // Check the running peak (non-destructive read).
-    uint32_t runningPeak = mySensor.getPeakIA();
+    uint32_t runningPeak = 0;
+    mySensor.getPeakIA(runningPeak);
     Serial.print("  |  Running Peak: ");
     Serial.print(runningPeak);
 
-    // Every kPeakInterval milliseconds, atomically read and reset the peak.
+    // Every interval, read and clear the peak.
     if ((millis() - lastResetTime) >= kPeakInterval)
     {
-        uint32_t peak = mySensor.readAndResetPeakIA();
+        uint32_t peak = 0;
+        mySensor.readAndResetPeakIA(peak);
 
         Serial.print("  |  ** Peak (reset): ");
         Serial.print(peak);

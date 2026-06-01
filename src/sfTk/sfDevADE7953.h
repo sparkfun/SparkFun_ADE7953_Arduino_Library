@@ -8,13 +8,6 @@
  * CT clamp (Channel A primary, Channel B optional) with support for gain configuration,
  * zero-crossing detection, peak measurement, and interrupt handling.
  *
- * The ADE7953 uses 16-bit register addresses. The address range determines data width:
- *   0x0xx = 8-bit registers
- *   0x1xx = 16-bit registers
- *   0x2xx = 24-bit registers (lower 24 bits of 32-bit value)
- *   0x3xx = 32-bit registers (upper 8 bits are sign-extended)
- * This driver uses the 32-bit addresses (0x3xx) for all 24/32-bit registers.
- *
  * @author SparkFun Electronics
  * @date 2025
  * @copyright Copyright (c) 2025, SparkFun Electronics Inc. This project is released under the MIT License.
@@ -33,233 +26,131 @@
 #include <sfTk/sfTkII2C.h>
 
 ///////////////////////////////////////////////////////////////////////////////
-// I2C Addressing
-///////////////////////////////////////////////////////////////////////////////
-const uint8_t kADE7953DefaultAddr = 0x38; ///< Default 7-bit I2C address for the ADE7953.
-
-///////////////////////////////////////////////////////////////////////////////
-// 8-Bit Register Addresses (0x0xx)
-///////////////////////////////////////////////////////////////////////////////
-const uint16_t ksfADE7953RegSagCyc = 0x000;       ///< Sag line cycles
-const uint16_t ksfADE7953RegDisNoLoad = 0x001;     ///< No-load detection disable
-const uint16_t ksfADE7953RegLCycMode = 0x004;      ///< Line cycle accumulation mode config
-const uint16_t ksfADE7953RegPgaV = 0x007;          ///< Voltage channel PGA gain (Bits[2:0])
-const uint16_t ksfADE7953RegPgaIA = 0x008;         ///< Current Channel A PGA gain (Bits[2:0])
-const uint16_t ksfADE7953RegPgaIB = 0x009;         ///< Current Channel B PGA gain (Bits[2:0])
-const uint16_t ksfADE7953RegWriteProtect = 0x040;  ///< Write protection bits (Bits[2:0])
-const uint16_t ksfADE7953RegLastOp = 0x0FD;        ///< Last operation type (0x35=read, 0xCA=write)
-const uint16_t ksfADE7953RegLastRwData8 = 0x0FF;   ///< Last successful 8-bit register data
-const uint16_t ksfADE7953RegVersion = 0x702;       ///< Silicon version number
-const uint16_t ksfADE7953RegExRef = 0x800;         ///< Reference input config (0=internal, 1=external)
-
-// Unlock register — write 0xAD here to unlock register 0x120
-const uint16_t ksfADE7953RegUnlock = 0x0FE;        ///< Register unlock
-const uint8_t ksfADE7953UnlockKey = 0xAD;          ///< Unlock key value
-
-///////////////////////////////////////////////////////////////////////////////
-// 16-Bit Register Addresses (0x1xx)
-///////////////////////////////////////////////////////////////////////////////
-const uint16_t ksfADE7953RegZXTout = 0x100;        ///< Zero-crossing timeout
-const uint16_t ksfADE7953RegLineCyc = 0x101;       ///< Half line cycles for line cycle accumulation
-const uint16_t ksfADE7953RegConfig = 0x102;        ///< Configuration register
-const uint16_t ksfADE7953RegCF1Den = 0x103;        ///< CF1 frequency divider denominator
-const uint16_t ksfADE7953RegCF2Den = 0x104;        ///< CF2 frequency divider denominator
-const uint16_t ksfADE7953RegCFMode = 0x107;        ///< CF output selection
-const uint16_t ksfADE7953RegPhCalA = 0x108;        ///< Phase calibration (Channel A, sign-magnitude)
-const uint16_t ksfADE7953RegPhCalB = 0x109;        ///< Phase calibration (Channel B, sign-magnitude)
-const uint16_t ksfADE7953RegPFA = 0x10A;           ///< Power factor (Channel A)
-const uint16_t ksfADE7953RegPFB = 0x10B;           ///< Power factor (Channel B)
-const uint16_t ksfADE7953RegAngleA = 0x10C;        ///< Angle between voltage and Current Channel A
-const uint16_t ksfADE7953RegAngleB = 0x10D;        ///< Angle between voltage and Current Channel B
-const uint16_t ksfADE7953RegPeriod = 0x10E;        ///< Period register (line period from ZX)
-const uint16_t ksfADE7953RegAltOutput = 0x110;     ///< Alternative output functions
-const uint16_t ksfADE7953RegOptimize = 0x120;      ///< Performance optimization (set to 0x0030)
-const uint16_t ksfADE7953RegLastAdd = 0x1FE;       ///< Last successful communication address
-const uint16_t ksfADE7953RegLastRwData16 = 0x1FF;  ///< Last successful 16-bit register data
-
-// Optimization value required by datasheet for specified performance
-const uint16_t ksfADE7953OptimizeValue = 0x0030;
-
-///////////////////////////////////////////////////////////////////////////////
-// 32-Bit Register Addresses (0x3xx)
-// These registers contain valid data in the lower 24 bits; upper 8 bits are sign-extended.
-///////////////////////////////////////////////////////////////////////////////
-
-// --- Threshold and configuration ---
-const uint16_t ksfADE7953RegSagLvl = 0x300;        ///< Sag voltage level
-const uint16_t ksfADE7953RegAccMode = 0x301;       ///< Accumulation mode
-const uint16_t ksfADE7953RegApNoLoad = 0x303;      ///< Active power no-load level
-const uint16_t ksfADE7953RegVarNoLoad = 0x304;     ///< Reactive power no-load level
-const uint16_t ksfADE7953RegVaNoLoad = 0x305;      ///< Apparent power no-load level
-
-// --- Instantaneous values ---
-const uint16_t ksfADE7953RegAVA = 0x310;           ///< Instantaneous apparent power (Channel A)
-const uint16_t ksfADE7953RegBVA = 0x311;           ///< Instantaneous apparent power (Channel B)
-const uint16_t ksfADE7953RegAWatt = 0x312;         ///< Instantaneous active power (Channel A)
-const uint16_t ksfADE7953RegBWatt = 0x313;         ///< Instantaneous active power (Channel B)
-const uint16_t ksfADE7953RegAVar = 0x314;          ///< Instantaneous reactive power (Channel A)
-const uint16_t ksfADE7953RegBVar = 0x315;          ///< Instantaneous reactive power (Channel B)
-const uint16_t ksfADE7953RegIA = 0x316;            ///< Instantaneous current (Channel A)
-const uint16_t ksfADE7953RegIB = 0x317;            ///< Instantaneous current (Channel B)
-const uint16_t ksfADE7953RegV = 0x318;             ///< Instantaneous voltage
-
-// --- RMS values ---
-const uint16_t ksfADE7953RegIRmsA = 0x31A;         ///< IRMS (Channel A)
-const uint16_t ksfADE7953RegIRmsB = 0x31B;         ///< IRMS (Channel B)
-const uint16_t ksfADE7953RegVRms = 0x31C;          ///< VRMS
-
-// --- Energy accumulators ---
-const uint16_t ksfADE7953RegAEnergyA = 0x31E;      ///< Active energy (Channel A)
-const uint16_t ksfADE7953RegAEnergyB = 0x31F;      ///< Active energy (Channel B)
-const uint16_t ksfADE7953RegREnergyA = 0x320;      ///< Reactive energy (Channel A)
-const uint16_t ksfADE7953RegREnergyB = 0x321;      ///< Reactive energy (Channel B)
-const uint16_t ksfADE7953RegApEnergyA = 0x322;     ///< Apparent energy (Channel A)
-const uint16_t ksfADE7953RegApEnergyB = 0x323;     ///< Apparent energy (Channel B)
-
-// --- Peak and overcurrent ---
-const uint16_t ksfADE7953RegOvLvl = 0x324;         ///< Overvoltage level
-const uint16_t ksfADE7953RegOiLvl = 0x325;         ///< Overcurrent level
-const uint16_t ksfADE7953RegVPeak = 0x326;         ///< Voltage channel peak
-const uint16_t ksfADE7953RegRstVPeak = 0x327;      ///< Voltage peak read with reset
-const uint16_t ksfADE7953RegIAPeak = 0x328;        ///< Current Channel A peak
-const uint16_t ksfADE7953RegRstIAPeak = 0x329;     ///< Current Channel A peak read with reset
-const uint16_t ksfADE7953RegIBPeak = 0x32A;        ///< Current Channel B peak
-const uint16_t ksfADE7953RegRstIBPeak = 0x32B;     ///< Current Channel B peak read with reset
-
-// --- Interrupts ---
-const uint16_t ksfADE7953RegIrqEnA = 0x32C;        ///< Interrupt enable (Channel A + voltage)
-const uint16_t ksfADE7953RegIrqStatA = 0x32D;      ///< Interrupt status (Channel A + voltage)
-const uint16_t ksfADE7953RegRstIrqStatA = 0x32E;   ///< Reset interrupt status (Channel A + voltage)
-const uint16_t ksfADE7953RegIrqEnB = 0x32F;        ///< Interrupt enable (Channel B)
-const uint16_t ksfADE7953RegIrqStatB = 0x330;      ///< Interrupt status (Channel B)
-const uint16_t ksfADE7953RegRstIrqStatB = 0x331;   ///< Reset interrupt status (Channel B)
-
-// --- CRC ---
-const uint16_t ksfADE7953RegCRC = 0x37F;           ///< Checksum (32-bit only, no 24-bit access)
-
-// --- Gain registers (Channel A) ---
-const uint16_t ksfADE7953RegAIGain = 0x380;        ///< Current channel gain (Channel A)
-const uint16_t ksfADE7953RegAVGain = 0x381;        ///< Voltage channel gain
-const uint16_t ksfADE7953RegAWGain = 0x382;        ///< Active power gain (Channel A)
-const uint16_t ksfADE7953RegAVarGain = 0x383;      ///< Reactive power gain (Channel A)
-const uint16_t ksfADE7953RegAVaGain = 0x384;       ///< Apparent power gain (Channel A)
-const uint16_t ksfADE7953RegAIRmsOS = 0x386;       ///< IRMS offset (Channel A)
-const uint16_t ksfADE7953RegVRmsOS = 0x388;        ///< VRMS offset
-const uint16_t ksfADE7953RegAWattOS = 0x389;       ///< Active power offset (Channel A)
-const uint16_t ksfADE7953RegAVarOS = 0x38A;        ///< Reactive power offset (Channel A)
-const uint16_t ksfADE7953RegAVaOS = 0x38B;         ///< Apparent power offset (Channel A)
-
-// --- Gain registers (Channel B) ---
-const uint16_t ksfADE7953RegBIGain = 0x38C;        ///< Current channel gain (Channel B)
-const uint16_t ksfADE7953RegBWGain = 0x38E;        ///< Active power gain (Channel B)
-const uint16_t ksfADE7953RegBVarGain = 0x38F;      ///< Reactive power gain (Channel B)
-const uint16_t ksfADE7953RegBVaGain = 0x390;       ///< Apparent power gain (Channel B)
-const uint16_t ksfADE7953RegBIRmsOS = 0x392;       ///< IRMS offset (Channel B)
-const uint16_t ksfADE7953RegBWattOS = 0x395;       ///< Active power offset (Channel B)
-const uint16_t ksfADE7953RegBVarOS = 0x396;        ///< Reactive power offset (Channel B)
-const uint16_t ksfADE7953RegBVaOS = 0x397;         ///< Apparent power offset (Channel B)
-
-// --- Last data (32-bit) ---
-const uint16_t ksfADE7953RegLastRwData32 = 0x3FF;  ///< Last successful 24/32-bit register data
-
-///////////////////////////////////////////////////////////////////////////////
 // PGA Gain Values
 ///////////////////////////////////////////////////////////////////////////////
-/// @brief PGA gain settings for PGA_V, PGA_IA, PGA_IB registers.
-/// These map to Bits[2:0] of the respective register.
-enum sfe_ade7953_pga_gain_t : uint8_t
+/// @brief PGA gain settings for the PGA_V, PGA_IA, and PGA_IB registers.
+/// @details These map to Bits[2:0] of the respective register. A typedef is provided so the
+/// type can be used without the @c enum keyword in environments where that matters.
+typedef enum sfe_ade7953_pga_gain_t : uint8_t
 {
-    ADE7953_PGA_GAIN_1 = 0,   ///< 1x gain
-    ADE7953_PGA_GAIN_2 = 1,   ///< 2x gain
-    ADE7953_PGA_GAIN_4 = 2,   ///< 4x gain
-    ADE7953_PGA_GAIN_8 = 3,   ///< 8x gain
-    ADE7953_PGA_GAIN_16 = 4,  ///< 16x gain
-    ADE7953_PGA_GAIN_22 = 5   ///< 22x gain (current channels only)
-};
+    ADE7953_PGA_GAIN_1 = 0,  ///< 1x gain
+    ADE7953_PGA_GAIN_2 = 1,  ///< 2x gain
+    ADE7953_PGA_GAIN_4 = 2,  ///< 4x gain
+    ADE7953_PGA_GAIN_8 = 3,  ///< 8x gain
+    ADE7953_PGA_GAIN_16 = 4, ///< 16x gain
+    ADE7953_PGA_GAIN_22 = 5  ///< 22x gain (current channels only; not valid for the voltage channel)
+} sfe_ade7953_pga_gain_t;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Zero-Crossing Edge Selection
 ///////////////////////////////////////////////////////////////////////////////
 /// @brief Zero-crossing edge selection for CONFIG register bits [13:12].
-enum sfe_ade7953_zx_edge_t : uint8_t
+typedef enum sfe_ade7953_zx_edge_t : uint8_t
 {
-    ADE7953_ZX_EDGE_BOTH = 0,      ///< Interrupt on both positive and negative-going ZX
-    ADE7953_ZX_EDGE_NEGATIVE = 1,  ///< Interrupt on negative-going ZX only
-    ADE7953_ZX_EDGE_POSITIVE = 2,  ///< Interrupt on positive-going ZX only
-    ADE7953_ZX_EDGE_BOTH_ALT = 3   ///< Same as BOTH (alternate encoding)
+    ADE7953_ZX_EDGE_BOTH = 0,     ///< Interrupt on both positive and negative-going ZX
+    ADE7953_ZX_EDGE_NEGATIVE = 1, ///< Interrupt on negative-going ZX only
+    ADE7953_ZX_EDGE_POSITIVE = 2, ///< Interrupt on positive-going ZX only
+    ADE7953_ZX_EDGE_BOTH_ALT = 3  ///< Same as BOTH (alternate encoding)
+} sfe_ade7953_zx_edge_t;
+
+///////////////////////////////////////////////////////////////////////////////
+// CONFIG Register Bitfield (Address 0x102)
+///////////////////////////////////////////////////////////////////////////////
+/// @brief Bitfield union for the 16-bit CONFIG register (0x102).
+union sfe_ade7953_config_reg_t
+{
+    struct
+    {
+        uint16_t intEnA : 1;    ///< Integrator enable (Channel A) [bit 0]
+        uint16_t intEnB : 1;    ///< Integrator enable (Channel B) [bit 1]
+        uint16_t hpfEn : 1;     ///< HPF enable (all channels) [bit 2]
+        uint16_t pfMode : 1;    ///< Power factor mode [bit 3]
+        uint16_t revpCF : 1;    ///< REVP updated on CF1(0) or CF2(1) [bit 4]
+        uint16_t revpPulse : 1; ///< REVP output mode [bit 5]
+        uint16_t zxLPF : 1;     ///< ZX LPF disable (1=disabled) [bit 6]
+        uint16_t swRst : 1;     ///< Software reset [bit 7]
+        uint16_t crcEn : 1;     ///< CRC enable [bit 8]
+        uint16_t : 2;           ///< Reserved [bits 9-10]
+        uint16_t zxI : 1;       ///< ZX_I source: 0=Channel A, 1=Channel B [bit 11]
+        uint16_t zxEdge : 2;    ///< ZX edge selection (see sfe_ade7953_zx_edge_t) [bits 13:12]
+        uint16_t : 1;           ///< Reserved [bit 14]
+        uint16_t commLock : 1;  ///< Communication locking (1=disabled) [bit 15]
+    };
+    uint16_t word; ///< Raw register value for I2C read/write.
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-// CONFIG Register Bit Definitions (Address 0x102)
+// LCYCMODE Register Bitfield (Address 0x004)
 ///////////////////////////////////////////////////////////////////////////////
-const uint16_t ksfADE7953ConfigIntEnA = (1 << 0);    ///< Integrator enable (Channel A)
-const uint16_t ksfADE7953ConfigIntEnB = (1 << 1);    ///< Integrator enable (Channel B)
-const uint16_t ksfADE7953ConfigHPFEn = (1 << 2);     ///< HPF enable (all channels)
-const uint16_t ksfADE7953ConfigPFMode = (1 << 3);    ///< Power factor mode
-const uint16_t ksfADE7953ConfigRevpCF = (1 << 4);    ///< REVP updated on CF1(0) or CF2(1)
-const uint16_t ksfADE7953ConfigRevpPulse = (1 << 5); ///< REVP output mode
-const uint16_t ksfADE7953ConfigZXLPF = (1 << 6);     ///< ZX LPF disable (1=disabled)
-const uint16_t ksfADE7953ConfigSWRst = (1 << 7);     ///< Software reset
-const uint16_t ksfADE7953ConfigCRCEn = (1 << 8);     ///< CRC enable
-const uint16_t ksfADE7953ConfigZXI = (1 << 11);      ///< ZX_I source: 0=Channel A, 1=Channel B
-const uint16_t ksfADE7953ConfigCommLock = (1 << 15);  ///< Communication locking (1=disabled)
-
-// CONFIG register ZX_EDGE field mask and shift
-const uint16_t ksfADE7953ConfigZXEdgeMask = 0x3000;  ///< Bits [13:12]
-const uint8_t ksfADE7953ConfigZXEdgeShift = 12;
-
-///////////////////////////////////////////////////////////////////////////////
-// LCYCMODE Register Bit Definitions (Address 0x004)
-///////////////////////////////////////////////////////////////////////////////
-const uint8_t ksfADE7953LCycALWatt = (1 << 0);  ///< Active energy line cycle mode (Channel A)
-const uint8_t ksfADE7953LCycBLWatt = (1 << 1);  ///< Active energy line cycle mode (Channel B)
-const uint8_t ksfADE7953LCycALVar = (1 << 2);   ///< Reactive energy line cycle mode (Channel A)
-const uint8_t ksfADE7953LCycBLVar = (1 << 3);   ///< Reactive energy line cycle mode (Channel B)
-const uint8_t ksfADE7953LCycALVa = (1 << 4);    ///< Apparent energy line cycle mode (Channel A)
-const uint8_t ksfADE7953LCycBLVa = (1 << 5);    ///< Apparent energy line cycle mode (Channel B)
-const uint8_t ksfADE7953LCycRstRead = (1 << 6); ///< Read-with-reset enable for all registers
+/// @brief Bitfield union for the 8-bit LCYCMODE register (0x004).
+union sfe_ade7953_lcycmode_reg_t
+{
+    struct
+    {
+        uint8_t aLWatt : 1;  ///< Active energy line cycle mode (Channel A) [bit 0]
+        uint8_t bLWatt : 1;  ///< Active energy line cycle mode (Channel B) [bit 1]
+        uint8_t aLVar : 1;   ///< Reactive energy line cycle mode (Channel A) [bit 2]
+        uint8_t bLVar : 1;   ///< Reactive energy line cycle mode (Channel B) [bit 3]
+        uint8_t aLVa : 1;    ///< Apparent energy line cycle mode (Channel A) [bit 4]
+        uint8_t bLVa : 1;    ///< Apparent energy line cycle mode (Channel B) [bit 5]
+        uint8_t rstRead : 1; ///< Read-with-reset enable for all registers [bit 6]
+        uint8_t : 1;         ///< Reserved [bit 7]
+    };
+    uint8_t byte; ///< Raw register value for I2C read/write.
+};
 
 ///////////////////////////////////////////////////////////////////////////////
-// DISNOLOAD Register Bit Definitions (Address 0x001)
+// DISNOLOAD Register Bitfield (Address 0x001)
 ///////////////////////////////////////////////////////////////////////////////
-const uint8_t ksfADE7953NoLoadDisAP = (1 << 0);  ///< Disable active power no-load detection
-const uint8_t ksfADE7953NoLoadDisVAR = (1 << 1); ///< Disable reactive power no-load detection
-const uint8_t ksfADE7953NoLoadDisVA = (1 << 2);  ///< Disable apparent power no-load detection
+/// @brief Bitfield union for the 8-bit DISNOLOAD register (0x001).
+union sfe_ade7953_disnoload_reg_t
+{
+    struct
+    {
+        uint8_t disAP : 1;  ///< Disable active power no-load detection [bit 0]
+        uint8_t disVAR : 1; ///< Disable reactive power no-load detection [bit 1]
+        uint8_t disVA : 1;  ///< Disable apparent power no-load detection [bit 2]
+        uint8_t : 5;        ///< Reserved [bits 3-7]
+    };
+    uint8_t byte; ///< Raw register value for I2C read/write.
+};
 
 ///////////////////////////////////////////////////////////////////////////////
-// Interrupt Bitmask Constants
+// IRQ Register Bitfield
 // Used with IRQENA/IRQSTATA (Channel A) and IRQENB/IRQSTATB (Channel B).
-// Channel B interrupts use bits [13:0] only.
+// Channel B interrupts use bits [13:0] only — bits [21:14] are Channel A / voltage only.
 ///////////////////////////////////////////////////////////////////////////////
-const uint32_t ksfADE7953IrqAEHF = (1UL << 0);       ///< Active energy half full
-const uint32_t ksfADE7953IrqVAREHF = (1UL << 1);     ///< Reactive energy half full
-const uint32_t ksfADE7953IrqVAEHF = (1UL << 2);      ///< Apparent energy half full
-const uint32_t ksfADE7953IrqAEOF = (1UL << 3);       ///< Active energy overflow/underflow
-const uint32_t ksfADE7953IrqVAREOF = (1UL << 4);     ///< Reactive energy overflow/underflow
-const uint32_t ksfADE7953IrqVAEOF = (1UL << 5);      ///< Apparent energy overflow/underflow
-const uint32_t ksfADE7953IrqApNoLoad = (1UL << 6);    ///< Active power no-load detected
-const uint32_t ksfADE7953IrqVarNoLoad = (1UL << 7);   ///< Reactive power no-load detected
-const uint32_t ksfADE7953IrqVaNoLoad = (1UL << 8);    ///< Apparent power no-load detected
-const uint32_t ksfADE7953IrqApSign = (1UL << 9);      ///< Active energy sign changed
-const uint32_t ksfADE7953IrqVarSign = (1UL << 10);    ///< Reactive energy sign changed
-const uint32_t ksfADE7953IrqZXToI = (1UL << 11);      ///< Current zero-crossing timeout
-const uint32_t ksfADE7953IrqZXI = (1UL << 12);        ///< Current zero-crossing detected
-const uint32_t ksfADE7953IrqOI = (1UL << 13);         ///< Overcurrent threshold exceeded
-// Bits 14-21 are Channel A / voltage only (not present in IRQENB/IRQSTATB)
-const uint32_t ksfADE7953IrqZXToV = (1UL << 14);      ///< Voltage zero-crossing timeout
-const uint32_t ksfADE7953IrqZXV = (1UL << 15);        ///< Voltage zero-crossing detected
-const uint32_t ksfADE7953IrqOV = (1UL << 16);         ///< Overvoltage threshold exceeded
-const uint32_t ksfADE7953IrqWSmp = (1UL << 17);       ///< New waveform data acquired
-const uint32_t ksfADE7953IrqCycEnd = (1UL << 18);     ///< End of line cycle accumulation period
-const uint32_t ksfADE7953IrqSag = (1UL << 19);        ///< Sag event occurred
-const uint32_t ksfADE7953IrqReset = (1UL << 20);      ///< Reset occurred (always enabled)
-const uint32_t ksfADE7953IrqCRC = (1UL << 21);        ///< Checksum changed
-
-///////////////////////////////////////////////////////////////////////////////
-// LAST_OP Values
-///////////////////////////////////////////////////////////////////////////////
-const uint8_t ksfADE7953LastOpRead = 0x35;  ///< Last operation was a read
-const uint8_t ksfADE7953LastOpWrite = 0xCA; ///< Last operation was a write
+/// @brief Bitfield union for the 32-bit IRQ enable and status registers.
+union sfe_ade7953_irq_reg_t
+{
+    struct
+    {
+        uint32_t aehf : 1;      ///< Active energy half full [bit 0]
+        uint32_t varehf : 1;    ///< Reactive energy half full [bit 1]
+        uint32_t vaehf : 1;     ///< Apparent energy half full [bit 2]
+        uint32_t aeof : 1;      ///< Active energy overflow/underflow [bit 3]
+        uint32_t vareof : 1;    ///< Reactive energy overflow/underflow [bit 4]
+        uint32_t vaeof : 1;     ///< Apparent energy overflow/underflow [bit 5]
+        uint32_t apNoLoad : 1;  ///< Active power no-load detected [bit 6]
+        uint32_t varNoLoad : 1; ///< Reactive power no-load detected [bit 7]
+        uint32_t vaNoLoad : 1;  ///< Apparent power no-load detected [bit 8]
+        uint32_t apSign : 1;    ///< Active energy sign changed [bit 9]
+        uint32_t varSign : 1;   ///< Reactive energy sign changed [bit 10]
+        uint32_t zxToI : 1;     ///< Current zero-crossing timeout [bit 11]
+        uint32_t zxI : 1;       ///< Current zero-crossing detected [bit 12]
+        uint32_t oI : 1;        ///< Overcurrent threshold exceeded [bit 13]
+        uint32_t zxToV : 1;     ///< Voltage zero-crossing timeout (Channel A only) [bit 14]
+        uint32_t zxV : 1;       ///< Voltage zero-crossing detected (Channel A only) [bit 15]
+        uint32_t oV : 1;        ///< Overvoltage threshold exceeded (Channel A only) [bit 16]
+        uint32_t wSmp : 1;      ///< New waveform data acquired (Channel A only) [bit 17]
+        uint32_t cycEnd : 1;    ///< End of line cycle accumulation period (Channel A only) [bit 18]
+        uint32_t sag : 1;       ///< Sag event occurred (Channel A only) [bit 19]
+        uint32_t reset : 1;     ///< Reset occurred — always enabled (Channel A only) [bit 20]
+        uint32_t crc : 1;       ///< Checksum changed (Channel A only) [bit 21]
+        uint32_t : 10;          ///< Reserved [bits 22-31]
+    };
+    uint32_t word; ///< Raw register value for I2C read/write.
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 // Class Declaration
@@ -268,12 +159,9 @@ const uint8_t ksfADE7953LastOpWrite = 0xCA; ///< Last operation was a write
 /// @brief Platform-independent driver for the ADE7953 energy metering IC.
 ///
 /// @details This class implements register-level access to the ADE7953 via the SparkFun Toolkit
-/// bus interface. It is focused on current measurement (CT clamp on Channel A, optional Channel B)
-/// with support for gain configuration, zero-crossing detection, peak measurement, calibration
-/// offsets, and interrupt management.
-///
-/// This class does not depend on Arduino — the Arduino-specific wrapper (SfeADE7953ArdI2C) provides
-/// the begin() and isConnected() methods that initialize the Toolkit I2C bus.
+/// bus interface. Most methods return a SparkFun Toolkit error code (::ksfTkErrOk on success, a
+/// negative value on error); values read from the device are returned through reference (output)
+/// parameters. Callers that do not care about error handling can simply ignore the returned code.
 class sfDevADE7953
 {
   public:
@@ -282,303 +170,519 @@ class sfDevADE7953
     }
 
     /// @brief Initialize the device driver with the given bus.
-    /// @details Sets the communication bus, configures byte order for big-endian,
-    /// and writes the optimized performance register (0x120 = 0x0030) as required by the datasheet.
-    /// @param theBus Pointer to the initialized bus object.
-    /// @return ksfTkErrOk on success, or an error code on failure.
-    bool begin(sfTkIBus *theBus = nullptr);
+    /// @details Verifies the device is responding, configures big-endian byte order, applies the
+    /// optimized performance register sequence required by the datasheet, and sets sensible default
+    /// gain / HPF configuration so a basic sketch works without any further setup.
+    /// @param theBus Pointer to the initialized bus object. If null, a bus set by a prior call is used.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t begin(sfTkIBus *theBus = nullptr);
 
-    /// @brief Set the communication bus pointer.
-    /// @param theBus Bus to use for all register I/O.
-    void setCommunicationBus(sfTkIBus *theBus);
+    /// @brief Check whether the ADE7953 is connected and responding.
+    /// @return true if the device responds, false otherwise.
+    bool isConnected(void);
 
     // ========================= Identity & Setup ===========================
 
     /// @brief Read the silicon version number from the Version register (0x702).
-    /// @return Silicon version, or 0 on error.
-    uint8_t getVersion(void);
+    /// @param version Output reference that receives the silicon version.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getVersion(uint8_t &version);
 
-    /// @brief Perform a software reset via the CONFIG register SWRST bit.
-    /// @return True on success, false on error.
-    bool reset(void);
+    /// @brief Perform a software reset and re-apply the datasheet performance configuration.
+    /// @details Asserts the CONFIG SWRST bit. Because a reset returns all registers to their
+    /// power-on defaults, this method re-runs the unlock + optimize sequence (and default gain / HPF
+    /// configuration) afterward so the device is left in the same state as a fresh begin().
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t reset(void);
 
     /// @brief Set write protection bits.
     /// @param protect Write protection value (Bits[2:0]).
-    /// @return True on success, false on error.
-    bool setWriteProtect(uint8_t protect);
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t setWriteProtect(uint8_t protect);
 
     /// @brief Get the current write protection setting.
-    /// @return Write protection value, or 0 on error.
-    uint8_t getWriteProtect(void);
+    /// @param protect Output reference that receives the write protection value (Bits[2:0]).
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getWriteProtect(uint8_t &protect);
 
     // ======================== PGA Gain Configuration ======================
 
     /// @brief Set the PGA gain for Current Channel A.
     /// @param gain PGA gain setting (see sfe_ade7953_pga_gain_t).
-    /// @return True on success, false on error.
-    bool setGainIA(sfe_ade7953_pga_gain_t gain);
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t setGainIA(sfe_ade7953_pga_gain_t gain);
 
     /// @brief Get the PGA gain for Current Channel A.
-    /// @return PGA gain setting, or ADE7953_PGA_GAIN_1 on error.
-    sfe_ade7953_pga_gain_t getGainIA(void);
+    /// @param gain Output reference that receives the PGA gain setting.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getGainIA(sfe_ade7953_pga_gain_t &gain);
 
     /// @brief Set the PGA gain for Current Channel B.
     /// @param gain PGA gain setting.
-    /// @return True on success, false on error.
-    bool setGainIB(sfe_ade7953_pga_gain_t gain);
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t setGainIB(sfe_ade7953_pga_gain_t gain);
 
     /// @brief Get the PGA gain for Current Channel B.
-    /// @return PGA gain setting, or ADE7953_PGA_GAIN_1 on error.
-    sfe_ade7953_pga_gain_t getGainIB(void);
+    /// @param gain Output reference that receives the PGA gain setting.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getGainIB(sfe_ade7953_pga_gain_t &gain);
 
     /// @brief Set the PGA gain for the voltage channel.
-    /// @note Even in current-only configurations, this affects ZX detection behavior.
-    /// @param gain PGA gain setting (ADE7953_PGA_GAIN_22 not valid for voltage).
-    /// @return True on success, false on error.
-    bool setGainV(sfe_ade7953_pga_gain_t gain);
+    /// @note ADE7953_PGA_GAIN_22 is not valid for the voltage channel and is rejected.
+    /// @param gain PGA gain setting.
+    /// @return ::ksfTkErrOk on success, ::ksfTkErrFail for an invalid gain, or an error code on
+    /// communication failure.
+    sfTkError_t setGainV(sfe_ade7953_pga_gain_t gain);
 
     /// @brief Get the PGA gain for the voltage channel.
-    /// @return PGA gain setting, or ADE7953_PGA_GAIN_1 on error.
-    sfe_ade7953_pga_gain_t getGainV(void);
+    /// @param gain Output reference that receives the PGA gain setting.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getGainV(sfe_ade7953_pga_gain_t &gain);
 
-    /// @brief Set the digital gain for Current Channel A.
-    /// @param gain Digital gain value (default 0x400000).
-    /// @return True on success, false on error.
-    bool setDigitalGainIA(uint32_t gain);
+    /// @brief Set the digital (fine) gain for Current Channel A using a raw register value.
+    /// @param gain Digital gain register value (0x400000 = unity).
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t setDigitalGainIA(uint32_t gain);
 
-    /// @brief Get the digital gain for Current Channel A.
-    /// @return Digital gain value, or 0 on error.
-    uint32_t getDigitalGainIA(void);
+    /// @brief Set the digital (fine) gain for Current Channel A using a floating-point multiplier.
+    /// @details Converts the multiplier to the nearest valid register value (0x400000 = 1.0x).
+    /// @param multiplier Desired gain multiplier (must be > 0 and within the representable range).
+    /// @return ::ksfTkErrOk on success, ::ksfTkErrFail if out of range, or an error code on failure.
+    sfTkError_t setDigitalGainIA(float multiplier);
 
-    /// @brief Set the digital gain for Current Channel B.
-    /// @param gain Digital gain value (default 0x400000).
-    /// @return True on success, false on error.
-    bool setDigitalGainIB(uint32_t gain);
+    /// @brief Get the digital gain for Current Channel A as a raw register value.
+    /// @param gain Output reference that receives the digital gain register value.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getDigitalGainIA(uint32_t &gain);
 
-    /// @brief Get the digital gain for Current Channel B.
-    /// @return Digital gain value, or 0 on error.
-    uint32_t getDigitalGainIB(void);
+    /// @brief Get the digital gain for Current Channel A as a floating-point multiplier.
+    /// @param multiplier Output reference that receives the gain multiplier (1.0 = unity).
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getDigitalGainIA(float &multiplier);
+
+    /// @brief Set the digital (fine) gain for Current Channel B using a raw register value.
+    /// @param gain Digital gain register value (0x400000 = unity).
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t setDigitalGainIB(uint32_t gain);
+
+    /// @brief Set the digital (fine) gain for Current Channel B using a floating-point multiplier.
+    /// @param multiplier Desired gain multiplier (must be > 0 and within the representable range).
+    /// @return ::ksfTkErrOk on success, ::ksfTkErrFail if out of range, or an error code on failure.
+    sfTkError_t setDigitalGainIB(float multiplier);
+
+    /// @brief Get the digital gain for Current Channel B as a raw register value.
+    /// @param gain Output reference that receives the digital gain register value.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getDigitalGainIB(uint32_t &gain);
+
+    /// @brief Get the digital gain for Current Channel B as a floating-point multiplier.
+    /// @param multiplier Output reference that receives the gain multiplier (1.0 = unity).
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getDigitalGainIB(float &multiplier);
 
     // ======================= Current Measurement ==========================
 
-    /// @brief Read the IRMS value for Current Channel A.
-    /// @return Raw unsigned IRMS value, or 0 on error.
-    uint32_t getIRmsA(void);
+    /// @brief Read the raw IRMS value for Current Channel A.
+    /// @param value Output reference that receives the raw unsigned IRMS value.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getIRmsA(uint32_t &value);
 
-    /// @brief Read the IRMS value for Current Channel B.
-    /// @return Raw unsigned IRMS value, or 0 on error.
-    uint32_t getIRmsB(void);
+    /// @brief Read the raw IRMS value for Current Channel B.
+    /// @param value Output reference that receives the raw unsigned IRMS value.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getIRmsB(uint32_t &value);
+
+    /// @brief Read the RMS current on Channel A converted to amps.
+    /// @details Combines the raw IRMS reading with the configured PGA gain, CT ratio, burden
+    /// resistor, and full-scale constants. The PGA gain is read from the device on each call, so the
+    /// conversion always matches the active gain.
+    /// @param amps Output reference that receives the current in amps.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getCurrentA(float &amps);
+
+    /// @brief Read the RMS current on Channel B converted to amps.
+    /// @param amps Output reference that receives the current in amps.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getCurrentB(float &amps);
 
     /// @brief Read the instantaneous current sample for Channel A.
-    /// @return Signed instantaneous current value, or 0 on error.
-    int32_t getInstantaneousIA(void);
+    /// @param value Output reference that receives the signed instantaneous current value.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getInstantaneousIA(int32_t &value);
 
     /// @brief Read the instantaneous current sample for Channel B.
-    /// @return Signed instantaneous current value, or 0 on error.
-    int32_t getInstantaneousIB(void);
+    /// @param value Output reference that receives the signed instantaneous current value.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getInstantaneousIB(int32_t &value);
+
+    // =================== Current Conversion Calibration ===================
+
+    /// @brief Set the CT (current transformer) turns ratio used by getCurrentA() / getCurrentB().
+    /// @param ratio Turns ratio of the current transformer (e.g. 2000.0 for a 30A:15mA clamp).
+    void setCurrentTransformerRatio(float ratio);
+
+    /// @brief Get the configured CT turns ratio.
+    /// @return The current transformer turns ratio.
+    float getCurrentTransformerRatio(void);
+
+    /// @brief Set the burden resistor value (in ohms) used by getCurrentA() / getCurrentB().
+    /// @param ohms Burden resistor value in ohms.
+    void setBurdenResistor(float ohms);
+
+    /// @brief Get the configured burden resistor value.
+    /// @return The burden resistor value in ohms.
+    float getBurdenResistor(void);
 
     // ======================== Peak Detection ==============================
 
     /// @brief Read the peak current value for Channel A.
-    /// @return Peak value, or 0 on error.
-    uint32_t getPeakIA(void);
+    /// @param value Output reference that receives the peak value.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getPeakIA(uint32_t &value);
 
     /// @brief Read the peak current value for Channel B.
-    /// @return Peak value, or 0 on error.
-    uint32_t getPeakIB(void);
+    /// @param value Output reference that receives the peak value.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getPeakIB(uint32_t &value);
 
-    /// @brief Read and reset the peak current value for Channel A.
-    /// @details Atomically reads the peak and clears the register.
-    /// @return Peak value before reset, or 0 on error.
-    uint32_t readAndResetPeakIA(void);
+    /// @brief Read the peak current value for Channel A and clear it.
+    /// @details Reads the read-with-reset register, which returns the peak value and clears it in a
+    /// single operation.
+    /// @param value Output reference that receives the peak value before reset.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t readAndResetPeakIA(uint32_t &value);
 
-    /// @brief Read and reset the peak current value for Channel B.
-    /// @details Atomically reads the peak and clears the register.
-    /// @return Peak value before reset, or 0 on error.
-    uint32_t readAndResetPeakIB(void);
+    /// @brief Read the peak current value for Channel B and clear it.
+    /// @param value Output reference that receives the peak value before reset.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t readAndResetPeakIB(uint32_t &value);
 
     /// @brief Set the overcurrent detection threshold.
     /// @param level Threshold level (24-bit value).
-    /// @return True on success, false on error.
-    bool setOvercurrentLevel(uint32_t level);
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t setOvercurrentLevel(uint32_t level);
 
     /// @brief Get the overcurrent detection threshold.
-    /// @return Threshold level, or 0 on error.
-    uint32_t getOvercurrentLevel(void);
+    /// @param level Output reference that receives the threshold level.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getOvercurrentLevel(uint32_t &level);
 
     // ====================== Calibration & Offset ==========================
 
     /// @brief Set the IRMS offset for Current Channel A.
+    /// @note The ADE7953 applies this offset in the squared domain (the value is added to the
+    /// square of the RMS result before the square root). To null a no-load noise floor of @c N raw
+    /// counts the offset is approximately @c -(N*N) scaled per the datasheet, not @c -N.
     /// @param offset Signed offset value for IRMS correction.
-    /// @return True on success, false on error.
-    bool setIRmsOffsetA(int32_t offset);
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t setIRmsOffsetA(int32_t offset);
 
     /// @brief Get the IRMS offset for Current Channel A.
-    /// @return Signed offset value, or 0 on error.
-    int32_t getIRmsOffsetA(void);
+    /// @param offset Output reference that receives the signed offset value.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getIRmsOffsetA(int32_t &offset);
 
-    /// @brief Set the IRMS offset for Current Channel B.
+    /// @brief Set the IRMS offset for Current Channel B. See setIRmsOffsetA() for the squared-domain note.
     /// @param offset Signed offset value for IRMS correction.
-    /// @return True on success, false on error.
-    bool setIRmsOffsetB(int32_t offset);
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t setIRmsOffsetB(int32_t offset);
 
     /// @brief Get the IRMS offset for Current Channel B.
-    /// @return Signed offset value, or 0 on error.
-    int32_t getIRmsOffsetB(void);
+    /// @param offset Output reference that receives the signed offset value.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getIRmsOffsetB(int32_t &offset);
 
     // ======================= Zero-Crossing (ZX_I) =========================
 
     /// @brief Select which current channel drives the ZX_I output.
     /// @param useChannelB If true, ZX_I is based on Channel B; if false, Channel A.
-    /// @return True on success, false on error.
-    bool setZXISource(bool useChannelB);
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t setZXISourceChannel(bool useChannelB);
 
     /// @brief Get which current channel drives the ZX_I output.
-    /// @return True if Channel B, false if Channel A (or on error).
-    bool getZXISource(void);
+    /// @param useChannelB Output reference set true if Channel B drives ZX_I, false for Channel A.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getZXISourceChannel(bool &useChannelB);
 
     /// @brief Set the zero-crossing edge selection for interrupt generation.
     /// @param edge Edge selection (see sfe_ade7953_zx_edge_t).
-    /// @return True on success, false on error.
-    bool setZXEdge(sfe_ade7953_zx_edge_t edge);
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t setZXEdge(sfe_ade7953_zx_edge_t edge);
 
     /// @brief Get the current zero-crossing edge selection.
-    /// @return Edge selection value.
-    sfe_ade7953_zx_edge_t getZXEdge(void);
+    /// @param edge Output reference that receives the edge selection value.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getZXEdge(sfe_ade7953_zx_edge_t &edge);
 
     /// @brief Enable or disable the zero-crossing low-pass filter.
     /// @param enable True to enable the LPF, false to disable.
-    /// @return True on success, false on error.
-    bool enableZXLPF(bool enable);
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t enableZXLPF(bool enable);
 
     /// @brief Enable or disable the high-pass filter on all channels.
-    /// @details The HPF removes DC offset from the current and voltage channels before
-    /// RMS computation. Should be enabled for accurate IRMS readings. Enabled by default
-    /// after power-on reset.
+    /// @details The HPF removes DC offset before RMS computation. It should be enabled for accurate
+    /// IRMS readings, and is enabled by default after power-on reset and by begin().
     /// @param enable True to enable the HPF, false to disable.
-    /// @return True on success, false on error.
-    bool enableHPF(bool enable);
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t enableHPF(bool enable);
 
     /// @brief Check whether the high-pass filter is currently enabled.
-    /// @return True if HPF is enabled, false if disabled or on error.
-    bool isHPFEnabled(void);
+    /// @param enabled Output reference set true if the HPF is enabled.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t isHPFEnabled(bool &enabled);
 
     /// @brief Read the line period derived from zero-crossing detection.
-    /// @return Period register value, or 0 on error.
-    uint16_t getPeriod(void);
+    /// @param period Output reference that receives the period register value.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getPeriod(uint16_t &period);
 
     // =========================== Interrupts ===============================
 
     /// @brief Set the interrupt enable mask for Channel A (and voltage).
-    /// @details Use the ksfADE7953Irq* bitmask constants to build the mask.
-    /// @param mask Interrupt enable bitmask.
-    /// @return True on success, false on error.
-    bool setInterruptEnableA(uint32_t mask);
+    /// @param mask Interrupt enable bitfield struct.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t setInterruptEnableA(sfe_ade7953_irq_reg_t mask);
 
     /// @brief Get the interrupt enable mask for Channel A.
-    /// @return Interrupt enable bitmask, or 0 on error.
-    uint32_t getInterruptEnableA(void);
+    /// @param mask Output reference that receives the interrupt enable bitfield.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getInterruptEnableA(sfe_ade7953_irq_reg_t &mask);
 
     /// @brief Read the interrupt status for Channel A (non-destructive).
-    /// @return Interrupt status bitmask, or 0 on error.
-    uint32_t getInterruptStatusA(void);
+    /// @param status Output reference that receives the interrupt status bitfield.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getInterruptStatusA(sfe_ade7953_irq_reg_t &status);
 
-    /// @brief Read and reset the interrupt status for Channel A.
-    /// @details This atomically reads the status and clears the flags.
-    /// @return Interrupt status bitmask before reset, or 0 on error.
-    uint32_t readAndResetInterruptStatusA(void);
+    /// @brief Read the interrupt status for Channel A and clear it.
+    /// @details Reads the read-with-reset register, returning the status and clearing the flags in a
+    /// single operation.
+    /// @param status Output reference that receives the interrupt status bitfield before reset.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t readAndResetInterruptStatusA(sfe_ade7953_irq_reg_t &status);
 
     /// @brief Set the interrupt enable mask for Channel B.
     /// @details Only bits [13:0] are valid for Channel B.
-    /// @param mask Interrupt enable bitmask.
-    /// @return True on success, false on error.
-    bool setInterruptEnableB(uint32_t mask);
+    /// @param mask Interrupt enable bitfield struct.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t setInterruptEnableB(sfe_ade7953_irq_reg_t mask);
 
     /// @brief Get the interrupt enable mask for Channel B.
-    /// @return Interrupt enable bitmask, or 0 on error.
-    uint32_t getInterruptEnableB(void);
+    /// @param mask Output reference that receives the interrupt enable bitfield.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getInterruptEnableB(sfe_ade7953_irq_reg_t &mask);
 
     /// @brief Read the interrupt status for Channel B (non-destructive).
-    /// @return Interrupt status bitmask, or 0 on error.
-    uint32_t getInterruptStatusB(void);
+    /// @param status Output reference that receives the interrupt status bitfield.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getInterruptStatusB(sfe_ade7953_irq_reg_t &status);
 
-    /// @brief Read and reset the interrupt status for Channel B.
-    /// @return Interrupt status bitmask before reset, or 0 on error.
-    uint32_t readAndResetInterruptStatusB(void);
+    /// @brief Read the interrupt status for Channel B and clear it.
+    /// @param status Output reference that receives the interrupt status bitfield before reset.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t readAndResetInterruptStatusB(sfe_ade7953_irq_reg_t &status);
 
     // ========================= No-Load Detection ==========================
 
     /// @brief Set the no-load detection disable register.
-    /// @param mask Bitmask of no-load features to disable (see ksfADE7953NoLoadDis* constants).
-    /// @return True on success, false on error.
-    bool setNoLoadDisable(uint8_t mask);
+    /// @param mask No-load disable bitfield struct.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t setNoLoadDisable(sfe_ade7953_disnoload_reg_t mask);
 
     /// @brief Get the no-load detection disable register.
-    /// @return Current disable bitmask, or 0 on error.
-    uint8_t getNoLoadDisable(void);
+    /// @param mask Output reference that receives the no-load disable bitfield.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getNoLoadDisable(sfe_ade7953_disnoload_reg_t &mask);
 
     // ====================== Line Cycle Accumulation =======================
 
     /// @brief Set the line cycle accumulation mode register.
-    /// @param mode Bitmask of line cycle modes (see ksfADE7953LCyc* constants).
-    /// @return True on success, false on error.
-    bool setLineCycleMode(uint8_t mode);
+    /// @param mode Line cycle mode bitfield struct.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t setLineCycleMode(sfe_ade7953_lcycmode_reg_t mode);
 
     /// @brief Get the line cycle accumulation mode register.
-    /// @return Mode bitmask, or 0 on error.
-    uint8_t getLineCycleMode(void);
+    /// @param mode Output reference that receives the line cycle mode bitfield.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getLineCycleMode(sfe_ade7953_lcycmode_reg_t &mode);
 
     /// @brief Set the number of half line cycles for line cycle accumulation.
     /// @param halfCycles Number of half cycles.
-    /// @return True on success, false on error.
-    bool setLineCycleCount(uint16_t halfCycles);
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t setLineCycleCount(uint16_t halfCycles);
 
     /// @brief Get the number of half line cycles for line cycle accumulation.
-    /// @return Number of half cycles, or 0 on error.
-    uint16_t getLineCycleCount(void);
+    /// @param halfCycles Output reference that receives the number of half cycles.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getLineCycleCount(uint16_t &halfCycles);
 
     // ========================= Sag Detection ==============================
 
     /// @brief Set the number of sag line cycles.
     /// @param cycles Number of half line cycles for sag detection.
-    /// @return True on success, false on error.
-    bool setSagCycles(uint8_t cycles);
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t setSagCycles(uint8_t cycles);
 
     /// @brief Get the number of sag line cycles.
-    /// @return Number of half line cycles, or 0 on error.
-    uint8_t getSagCycles(void);
+    /// @param cycles Output reference that receives the number of half line cycles.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getSagCycles(uint8_t &cycles);
 
     /// @brief Set the sag voltage level threshold.
     /// @param level Sag level threshold (24-bit value).
-    /// @return True on success, false on error.
-    bool setSagLevel(uint32_t level);
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t setSagLevel(uint32_t level);
 
     /// @brief Get the sag voltage level threshold.
-    /// @return Sag level, or 0 on error.
-    uint32_t getSagLevel(void);
+    /// @param level Output reference that receives the sag level.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getSagLevel(uint32_t &level);
 
     // ========================== Diagnostics ===============================
 
     /// @brief Get the type of the last successful communication.
-    /// @return 0x35 for read, 0xCA for write, or 0 on error.
-    uint8_t getLastOperation(void);
+    /// @param op Output reference that receives 0x35 for a read or 0xCA for a write.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getLastOperation(uint8_t &op);
 
     /// @brief Get the address of the last successful communication.
-    /// @return Register address, or 0 on error.
-    uint16_t getLastAddress(void);
+    /// @param address Output reference that receives the register address.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getLastAddress(uint16_t &address);
 
     /// @brief Get the data from the last successful 8-bit register communication.
-    /// @return Data value, or 0 on error.
-    uint8_t getLastData8(void);
+    /// @param data Output reference that receives the data value.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getLastData8(uint8_t &data);
 
     /// @brief Get the data from the last successful 16-bit register communication.
-    /// @return Data value, or 0 on error.
-    uint16_t getLastData16(void);
+    /// @param data Output reference that receives the data value.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getLastData16(uint16_t &data);
 
     /// @brief Get the data from the last successful 24/32-bit register communication.
-    /// @return Data value, or 0 on error.
-    uint32_t getLastData32(void);
+    /// @param data Output reference that receives the data value.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t getLastData32(uint32_t &data);
 
   protected:
+    /// @brief Apply the datasheet unlock + optimize sequence and default configuration.
+    /// @details Shared by begin() and reset(). Assumes _theBus is valid and byte order is set.
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t applyDefaultConfig(void);
+
+    /// @brief Convert a PGA gain enum value to its numeric multiplier (1, 2, 4, 8, 16, 22).
+    static float pgaGainToMultiplier(sfe_ade7953_pga_gain_t gain);
+
     sfTkIBus *_theBus; ///< Pointer to the communication bus device.
+
+    // --- Current-to-amps conversion parameters (sensible defaults for the Qwiic board) ---
+    float _ctRatio = 2000.0f;          ///< CT turns ratio (30A:15mA = 2000:1).
+    float _burdenResistor = 5.6f;      ///< Burden resistor in ohms.
+    float _fullScaleCode = 5928256.0f; ///< ADE7953 full-scale IRMS code.
+    float _fullScaleVrms = 0.35355f;   ///< Full-scale input RMS voltage (0.5 V peak / sqrt(2)).
+
+    ///////////////////////////////////////////////////////////////////////////
+    // I2C Addressing
+    ///////////////////////////////////////////////////////////////////////////
+    static const uint8_t kI2CAddress = 0x38; ///< 7-bit I2C address for the ADE7953 (only address).
+
+    // 8-Bit Register Addresses (0x0xx)
+    static const uint16_t kRegSagCyc = 0x000;       ///< Sag line cycles
+    static const uint16_t kRegDisNoLoad = 0x001;    ///< No-load detection disable
+    static const uint16_t kRegLCycMode = 0x004;     ///< Line cycle accumulation mode config
+    static const uint16_t kRegPgaV = 0x007;         ///< Voltage channel PGA gain (Bits[2:0])
+    static const uint16_t kRegPgaIA = 0x008;        ///< Current Channel A PGA gain (Bits[2:0])
+    static const uint16_t kRegPgaIB = 0x009;        ///< Current Channel B PGA gain (Bits[2:0])
+    static const uint16_t kRegWriteProtect = 0x040; ///< Write protection bits (Bits[2:0])
+    static const uint16_t kRegLastOp = 0x0FD;       ///< Last operation type (0x35=read, 0xCA=write)
+    static const uint16_t kRegLastRwData8 = 0x0FF;  ///< Last successful 8-bit register data
+    static const uint16_t kRegVersion = 0x702;      ///< Silicon version number
+    static const uint16_t kRegExRef = 0x800;        ///< Reference input config (0=internal, 1=external)
+    static const uint16_t kRegUnlock = 0x0FE;       ///< Register unlock (write key to unlock 0x120)
+
+    // 16-Bit Register Addresses (0x1xx)
+    static const uint16_t kRegZXTout = 0x100;       ///< Zero-crossing timeout
+    static const uint16_t kRegLineCyc = 0x101;      ///< Half line cycles for line cycle accumulation
+    static const uint16_t kRegConfig = 0x102;       ///< Configuration register
+    static const uint16_t kRegCF1Den = 0x103;       ///< CF1 frequency divider denominator
+    static const uint16_t kRegCF2Den = 0x104;       ///< CF2 frequency divider denominator
+    static const uint16_t kRegCFMode = 0x107;       ///< CF output selection
+    static const uint16_t kRegPhCalA = 0x108;       ///< Phase calibration (Channel A)
+    static const uint16_t kRegPhCalB = 0x109;       ///< Phase calibration (Channel B)
+    static const uint16_t kRegPFA = 0x10A;          ///< Power factor (Channel A)
+    static const uint16_t kRegPFB = 0x10B;          ///< Power factor (Channel B)
+    static const uint16_t kRegAngleA = 0x10C;       ///< Angle between voltage and Current Channel A
+    static const uint16_t kRegAngleB = 0x10D;       ///< Angle between voltage and Current Channel B
+    static const uint16_t kRegPeriod = 0x10E;       ///< Period register (line period from ZX)
+    static const uint16_t kRegAltOutput = 0x110;    ///< Alternative output functions
+    static const uint16_t kRegOptimize = 0x120;     ///< Performance optimization (set to 0x0030)
+    static const uint16_t kRegLastAdd = 0x1FE;      ///< Last successful communication address
+    static const uint16_t kRegLastRwData16 = 0x1FF; ///< Last successful 16-bit register data
+
+    // 32-Bit Register Addresses (0x3xx) -- valid data in lower 24 bits, upper 8 sign-extended
+    static const uint16_t kRegSagLvl = 0x300;    ///< Sag voltage level
+    static const uint16_t kRegAccMode = 0x301;   ///< Accumulation mode
+    static const uint16_t kRegApNoLoad = 0x303;  ///< Active power no-load level
+    static const uint16_t kRegVarNoLoad = 0x304; ///< Reactive power no-load level
+    static const uint16_t kRegVaNoLoad = 0x305;  ///< Apparent power no-load level
+    static const uint16_t kRegAVA = 0x310;       ///< Instantaneous apparent power (Channel A)
+    static const uint16_t kRegBVA = 0x311;       ///< Instantaneous apparent power (Channel B)
+    static const uint16_t kRegAWatt = 0x312;     ///< Instantaneous active power (Channel A)
+    static const uint16_t kRegBWatt = 0x313;     ///< Instantaneous active power (Channel B)
+    static const uint16_t kRegAVar = 0x314;      ///< Instantaneous reactive power (Channel A)
+    static const uint16_t kRegBVar = 0x315;      ///< Instantaneous reactive power (Channel B)
+    static const uint16_t kRegIA = 0x316;        ///< Instantaneous current (Channel A)
+    static const uint16_t kRegIB = 0x317;        ///< Instantaneous current (Channel B)
+    static const uint16_t kRegV = 0x318;         ///< Instantaneous voltage
+    static const uint16_t kRegIRmsA = 0x31A;     ///< IRMS (Channel A)
+    static const uint16_t kRegIRmsB = 0x31B;     ///< IRMS (Channel B)
+    static const uint16_t kRegVRms = 0x31C;      ///< VRMS
+    static const uint16_t kRegAEnergyA = 0x31E;  ///< Active energy (Channel A)
+    static const uint16_t kRegAEnergyB = 0x31F;  ///< Active energy (Channel B)
+    static const uint16_t kRegREnergyA = 0x320;  ///< Reactive energy (Channel A)
+    static const uint16_t kRegREnergyB = 0x321;  ///< Reactive energy (Channel B)
+    static const uint16_t kRegApEnergyA = 0x322; ///< Apparent energy (Channel A)
+    static const uint16_t kRegApEnergyB = 0x323; ///< Apparent energy (Channel B)
+    static const uint16_t kRegOvLvl = 0x324;     ///< Overvoltage level
+    static const uint16_t kRegOiLvl = 0x325;     ///< Overcurrent level
+    static const uint16_t kRegVPeak = 0x326;     ///< Voltage channel peak
+    static const uint16_t kRegRstVPeak = 0x327;  ///< Voltage peak read with reset
+    static const uint16_t kRegIAPeak = 0x328;    ///< Current Channel A peak
+    static const uint16_t kRegRstIAPeak = 0x329; ///< Current Channel A peak read with reset
+    static const uint16_t kRegIBPeak = 0x32A;    ///< Current Channel B peak
+    static const uint16_t kRegRstIBPeak = 0x32B; ///< Current Channel B peak read with reset
+    static const uint16_t kRegIrqEnA = 0x32C;    ///< Interrupt enable (Channel A + voltage)
+    static const uint16_t kRegIrqStatA = 0x32D;  ///< Interrupt status (Channel A + voltage)
+    static const uint16_t kRegRstIrqStatA = 0x32E; ///< Reset interrupt status (Channel A + voltage)
+    static const uint16_t kRegIrqEnB = 0x32F;    ///< Interrupt enable (Channel B)
+    static const uint16_t kRegIrqStatB = 0x330;  ///< Interrupt status (Channel B)
+    static const uint16_t kRegRstIrqStatB = 0x331; ///< Reset interrupt status (Channel B)
+    static const uint16_t kRegCRC = 0x37F;       ///< Checksum (32-bit only)
+    static const uint16_t kRegAIGain = 0x380;    ///< Current channel gain (Channel A)
+    static const uint16_t kRegAVGain = 0x381;    ///< Voltage channel gain
+    static const uint16_t kRegAWGain = 0x382;    ///< Active power gain (Channel A)
+    static const uint16_t kRegAVarGain = 0x383;  ///< Reactive power gain (Channel A)
+    static const uint16_t kRegAVaGain = 0x384;   ///< Apparent power gain (Channel A)
+    static const uint16_t kRegAIRmsOS = 0x386;   ///< IRMS offset (Channel A)
+    static const uint16_t kRegVRmsOS = 0x388;    ///< VRMS offset
+    static const uint16_t kRegAWattOS = 0x389;   ///< Active power offset (Channel A)
+    static const uint16_t kRegAVarOS = 0x38A;    ///< Reactive power offset (Channel A)
+    static const uint16_t kRegAVaOS = 0x38B;     ///< Apparent power offset (Channel A)
+    static const uint16_t kRegBIGain = 0x38C;    ///< Current channel gain (Channel B)
+    static const uint16_t kRegBWGain = 0x38E;    ///< Active power gain (Channel B)
+    static const uint16_t kRegBVarGain = 0x38F;  ///< Reactive power gain (Channel B)
+    static const uint16_t kRegBVaGain = 0x390;   ///< Apparent power gain (Channel B)
+    static const uint16_t kRegBIRmsOS = 0x392;   ///< IRMS offset (Channel B)
+    static const uint16_t kRegBWattOS = 0x395;   ///< Active power offset (Channel B)
+    static const uint16_t kRegBVarOS = 0x396;    ///< Reactive power offset (Channel B)
+    static const uint16_t kRegBVaOS = 0x397;     ///< Apparent power offset (Channel B)
+    static const uint16_t kRegLastRwData32 = 0x3FF; ///< Last successful 24/32-bit register data
+
+    // Magic Values
+    static const uint8_t kUnlockKey = 0xAD;             ///< Key written to kRegUnlock to unlock 0x120.
+    static const uint16_t kOptimizeValue = 0x0030;      ///< Value written to 0x120 for rated performance.
+    static const uint32_t kDigitalGainUnity = 0x400000; ///< Digital gain register value for 1.0x.
+    static const uint32_t kDigitalGainMax = 0x7FFFFF;   ///< Maximum valid digital gain register value.
+    static const uint8_t kLastOpRead = 0x35;            ///< Last operation was a read.
+    static const uint8_t kLastOpWrite = 0xCA;           ///< Last operation was a write.
 };
