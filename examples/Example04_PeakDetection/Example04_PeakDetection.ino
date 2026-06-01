@@ -61,7 +61,7 @@ void loop()
 {
     // Print the current IRMS value (raw) for context.
     uint32_t irms = 0;
-    mySensor.getIRmsA(irms);
+    mySensor.getIRMSA(irms);
     Serial.print("IRMS (raw): ");
     Serial.print(irms);
 

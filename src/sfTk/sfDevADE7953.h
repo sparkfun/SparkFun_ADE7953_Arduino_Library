@@ -54,6 +54,19 @@ typedef enum sfe_ade7953_zx_edge_t : uint8_t
 } sfe_ade7953_zx_edge_t;
 
 ///////////////////////////////////////////////////////////////////////////////
+// Current Clamp Presets
+///////////////////////////////////////////////////////////////////////////////
+/// @brief Supported clamp-on current transformers.
+/// @details Passing one of these to setCurrentClamp() applies the matching turns ratio and a
+/// suitable PGA gain for the board's 5.6 ohm burden resistor. Users with a different clamp can call
+/// setCurrentClamp(float) (or setCurrentTransformerRatio()) to enter a turns ratio directly.
+typedef enum sfe_ade7953_clamp_t : uint8_t
+{
+    ADE7953_CLAMP_ECS1030 = 0, ///< SparkFun ECS1030-L72: 30A:15mA (2000:1 turns), 4x PGA gain
+    ADE7953_CLAMP_SCT013 = 1   ///< SCT-013-000: 100A:50mA (2000:1 turns), 1x PGA gain
+} sfe_ade7953_clamp_t;
+
+///////////////////////////////////////////////////////////////////////////////
 // CONFIG Register Bitfield (Address 0x102)
 ///////////////////////////////////////////////////////////////////////////////
 /// @brief Bitfield union for the 16-bit CONFIG register (0x102).
@@ -285,12 +298,12 @@ class sfDevADE7953
     /// @brief Read the raw IRMS value for Current Channel A.
     /// @param value Output reference that receives the raw unsigned IRMS value.
     /// @return ::ksfTkErrOk on success, or an error code on failure.
-    sfTkError_t getIRmsA(uint32_t &value);
+    sfTkError_t getIRMSA(uint32_t &value);
 
     /// @brief Read the raw IRMS value for Current Channel B.
     /// @param value Output reference that receives the raw unsigned IRMS value.
     /// @return ::ksfTkErrOk on success, or an error code on failure.
-    sfTkError_t getIRmsB(uint32_t &value);
+    sfTkError_t getIRMSB(uint32_t &value);
 
     /// @brief Read the RMS current on Channel A converted to amps.
     /// @details Combines the raw IRMS reading with the configured PGA gain, CT ratio, burden
@@ -317,6 +330,19 @@ class sfDevADE7953
 
     // =================== Current Conversion Calibration ===================
 
+    /// @brief Select a known current clamp and apply its turns ratio and PGA gain.
+    /// @details Sets the CT ratio used by getCurrentA()/getCurrentB() and writes a suitable PGA gain
+    /// to both current channels for the board's 5.6 ohm burden resistor.
+    /// @param clamp One of the supported clamps (see sfe_ade7953_clamp_t).
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t setCurrentClamp(sfe_ade7953_clamp_t clamp);
+
+    /// @brief Configure a custom current clamp by its turns ratio.
+    /// @details Use this for a clamp that is not one of the presets. Only the CT ratio is changed;
+    /// the PGA gain is left as-is (set it with setGainIA()/setGainIB() if needed).
+    /// @param turnsRatio Turns ratio of the current transformer (e.g. 2000.0 for 30A:15mA).
+    void setCurrentClamp(float turnsRatio);
+
     /// @brief Set the CT (current transformer) turns ratio used by getCurrentA() / getCurrentB().
     /// @param ratio Turns ratio of the current transformer (e.g. 2000.0 for a 30A:15mA clamp).
     void setCurrentTransformerRatio(float ratio);
@@ -332,6 +358,25 @@ class sfDevADE7953
     /// @brief Get the configured burden resistor value.
     /// @return The burden resistor value in ohms.
     float getBurdenResistor(void);
+
+    /// @brief Auto-calibrate the Channel A no-load baseline by averaging samples.
+    /// @details Reads @p numSamples raw IRMS samples (which must be taken with NO current flowing)
+    /// and stores their average as a software noise floor. getCurrentA() then removes it in the
+    /// squared domain — corrected = sqrt(reading^2 - baseline^2) — which is the physically correct
+    /// way to subtract an RMS noise floor and needs no datasheet-specific scaling. This leaves the
+    /// hardware AIRMSOS register untouched.
+    /// @param numSamples Number of samples to average (must be > 0).
+    /// @return ::ksfTkErrOk on success, ::ksfTkErrFail if numSamples is 0, or an error code on
+    /// communication failure.
+    sfTkError_t autoCalibrateA(uint16_t numSamples = 50);
+
+    /// @brief Auto-calibrate the Channel B no-load baseline by averaging samples.
+    /// @param numSamples Number of samples to average (must be > 0).
+    /// @return ::ksfTkErrOk on success, ::ksfTkErrFail if numSamples is 0, or an error code on failure.
+    sfTkError_t autoCalibrateB(uint16_t numSamples = 50);
+
+    /// @brief Clear the software no-load baseline for both channels (set by autoCalibrate).
+    void clearCalibration(void);
 
     // ======================== Peak Detection ==============================
 
@@ -375,22 +420,22 @@ class sfDevADE7953
     /// counts the offset is approximately @c -(N*N) scaled per the datasheet, not @c -N.
     /// @param offset Signed offset value for IRMS correction.
     /// @return ::ksfTkErrOk on success, or an error code on failure.
-    sfTkError_t setIRmsOffsetA(int32_t offset);
+    sfTkError_t setIRMSOffsetA(int32_t offset);
 
     /// @brief Get the IRMS offset for Current Channel A.
     /// @param offset Output reference that receives the signed offset value.
     /// @return ::ksfTkErrOk on success, or an error code on failure.
-    sfTkError_t getIRmsOffsetA(int32_t &offset);
+    sfTkError_t getIRMSOffsetA(int32_t &offset);
 
-    /// @brief Set the IRMS offset for Current Channel B. See setIRmsOffsetA() for the squared-domain note.
+    /// @brief Set the IRMS offset for Current Channel B. See setIRMSOffsetA() for the squared-domain note.
     /// @param offset Signed offset value for IRMS correction.
     /// @return ::ksfTkErrOk on success, or an error code on failure.
-    sfTkError_t setIRmsOffsetB(int32_t offset);
+    sfTkError_t setIRMSOffsetB(int32_t offset);
 
     /// @brief Get the IRMS offset for Current Channel B.
     /// @param offset Output reference that receives the signed offset value.
     /// @return ::ksfTkErrOk on success, or an error code on failure.
-    sfTkError_t getIRmsOffsetB(int32_t &offset);
+    sfTkError_t getIRMSOffsetB(int32_t &offset);
 
     // ======================= Zero-Crossing (ZX_I) =========================
 
@@ -573,6 +618,10 @@ class sfDevADE7953
     /// @brief Convert a PGA gain enum value to its numeric multiplier (1, 2, 4, 8, 16, 22).
     static float pgaGainToMultiplier(sfe_ade7953_pga_gain_t gain);
 
+    /// @brief Remove a no-load baseline from a raw RMS reading in the squared domain.
+    /// @return sqrt(reading^2 - baseline^2), clamped at 0; or reading unchanged if baseline is 0.
+    static float removeBaseline(uint32_t reading, uint32_t baseline);
+
     sfTkIBus *_theBus; ///< Pointer to the communication bus device.
 
     // --- Current-to-amps conversion parameters (sensible defaults for the Qwiic board) ---
@@ -580,6 +629,10 @@ class sfDevADE7953
     float _burdenResistor = 5.6f;      ///< Burden resistor in ohms.
     float _fullScaleCode = 5928256.0f; ///< ADE7953 full-scale IRMS code.
     float _fullScaleVrms = 0.35355f;   ///< Full-scale input RMS voltage (0.5 V peak / sqrt(2)).
+
+    // --- Software no-load baselines set by autoCalibrate, removed in the squared domain ---
+    uint32_t _baselineA = 0; ///< Channel A no-load IRMS baseline (raw counts).
+    uint32_t _baselineB = 0; ///< Channel B no-load IRMS baseline (raw counts).
 
     ///////////////////////////////////////////////////////////////////////////
     // I2C Addressing
@@ -634,9 +687,9 @@ class sfDevADE7953
     static const uint16_t kRegIA = 0x316;        ///< Instantaneous current (Channel A)
     static const uint16_t kRegIB = 0x317;        ///< Instantaneous current (Channel B)
     static const uint16_t kRegV = 0x318;         ///< Instantaneous voltage
-    static const uint16_t kRegIRmsA = 0x31A;     ///< IRMS (Channel A)
-    static const uint16_t kRegIRmsB = 0x31B;     ///< IRMS (Channel B)
-    static const uint16_t kRegVRms = 0x31C;      ///< VRMS
+    static const uint16_t kRegIRMSA = 0x31A;     ///< IRMS (Channel A)
+    static const uint16_t kRegIRMSB = 0x31B;     ///< IRMS (Channel B)
+    static const uint16_t kRegVRMS = 0x31C;      ///< VRMS
     static const uint16_t kRegAEnergyA = 0x31E;  ///< Active energy (Channel A)
     static const uint16_t kRegAEnergyB = 0x31F;  ///< Active energy (Channel B)
     static const uint16_t kRegREnergyA = 0x320;  ///< Reactive energy (Channel A)
@@ -663,8 +716,8 @@ class sfDevADE7953
     static const uint16_t kRegAWGain = 0x382;    ///< Active power gain (Channel A)
     static const uint16_t kRegAVarGain = 0x383;  ///< Reactive power gain (Channel A)
     static const uint16_t kRegAVaGain = 0x384;   ///< Apparent power gain (Channel A)
-    static const uint16_t kRegAIRmsOS = 0x386;   ///< IRMS offset (Channel A)
-    static const uint16_t kRegVRmsOS = 0x388;    ///< VRMS offset
+    static const uint16_t kRegAIRMSOS = 0x386;   ///< IRMS offset (Channel A)
+    static const uint16_t kRegVRMSOS = 0x388;    ///< VRMS offset
     static const uint16_t kRegAWattOS = 0x389;   ///< Active power offset (Channel A)
     static const uint16_t kRegAVarOS = 0x38A;    ///< Reactive power offset (Channel A)
     static const uint16_t kRegAVaOS = 0x38B;     ///< Apparent power offset (Channel A)
@@ -672,7 +725,7 @@ class sfDevADE7953
     static const uint16_t kRegBWGain = 0x38E;    ///< Active power gain (Channel B)
     static const uint16_t kRegBVarGain = 0x38F;  ///< Reactive power gain (Channel B)
     static const uint16_t kRegBVaGain = 0x390;   ///< Apparent power gain (Channel B)
-    static const uint16_t kRegBIRmsOS = 0x392;   ///< IRMS offset (Channel B)
+    static const uint16_t kRegBIRMSOS = 0x392;   ///< IRMS offset (Channel B)
     static const uint16_t kRegBWattOS = 0x395;   ///< Active power offset (Channel B)
     static const uint16_t kRegBVarOS = 0x396;    ///< Reactive power offset (Channel B)
     static const uint16_t kRegBVaOS = 0x397;     ///< Apparent power offset (Channel B)

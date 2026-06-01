@@ -42,6 +42,12 @@ void setup()
     }
 
     Serial.println("ADE7953 connected!");
+
+    // Tell the library which clamp is attached so the amps conversion is correct. This sets the
+    // turns ratio and a suitable PGA gain for you. Use ADE7953_CLAMP_SCT013 for the SCT-013-000,
+    // or mySensor.setCurrentClamp(yourRatio) to enter a custom turns ratio.
+    mySensor.setCurrentClamp(ADE7953_CLAMP_ECS1030);
+
     Serial.println();
     Serial.println("Channel A (A)\tChannel B (A)");
     Serial.println("-------------\t-------------");

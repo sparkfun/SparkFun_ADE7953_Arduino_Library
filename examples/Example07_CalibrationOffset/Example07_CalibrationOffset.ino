@@ -1,22 +1,19 @@
 /*
-  Example 07 - Calibration Offset & Error Handling
+  Example 07 - Auto Calibration & Error Handling
 
   Two things are shown here:
 
-  1. Error handling. Every library read/write returns a SparkFun Toolkit error code
+  1. Auto calibration. Even with no current flowing, the ADC reports a small nonzero IRMS
+     value due to noise. autoCalibrateA() averages a number of no-load samples and stores
+     that baseline; getCurrentA() then removes it in the squared domain
+     (corrected = sqrt(reading^2 - baseline^2)), which is the physically correct way to
+     subtract an RMS noise floor and needs no datasheet-specific scaling. The hardware
+     AIRMSOS register is left untouched, but setIRMSOffsetA()/getIRMSOffsetA() are still
+     available if you want to use it.
+
+  2. Error handling. Every library read/write returns a SparkFun Toolkit error code
      (ksfTkErrOk on success, a negative value on failure). Most sketches ignore it for
-     simplicity, but this example shows how to check it so you can detect a disconnected
-     or misbehaving device.
-
-  2. Zeroing the no-load baseline. Even with no current flowing, the ADC reports a small
-     nonzero IRMS value due to noise. This example measures that baseline and removes it.
-
-  A note on the hardware offset register (AIRMSOS): the ADE7953 applies it in the squared
-  domain (the offset is added to the square of the RMS result before the square root), so
-  the value needed to null a noise floor of N counts is NOT simply -N. The exact scaling is
-  datasheet dependent. To keep this example correct and easy to follow, the baseline is
-  removed in software; getIRmsOffsetA()/setIRmsOffsetA() are demonstrated so you can apply a
-  hardware offset once you have determined the right value for your setup.
+     simplicity, but this example checks it so you can detect a misbehaving device.
 
   Run with NO load connected to Channel A during the calibration phase.
 
@@ -41,15 +38,12 @@
 SfeADE7953ArdI2C mySensor;
 
 // Number of samples to average during calibration.
-const int kCalSamples = 50;
-
-// Software baseline (raw IRMS counts measured with no load).
-uint32_t baseline = 0;
+const uint16_t kCalSamples = 50;
 
 void setup()
 {
     Serial.begin(115200);
-    Serial.println("SparkFun ADE7953 Example 7 - Calibration Offset & Error Handling");
+    Serial.println("SparkFun ADE7953 Example 7 - Auto Calibration & Error Handling");
 
     Wire.begin();
 
@@ -61,66 +55,37 @@ void setup()
 
     Serial.println("ADE7953 connected!");
 
-    // Clear any existing hardware offset so it does not affect our baseline measurement.
-    mySensor.setIRmsOffsetA(0);
-
-    int32_t hwOffset = 0;
-    mySensor.getIRmsOffsetA(hwOffset);
-    Serial.print("Hardware IRMS offset register: ");
-    Serial.println(hwOffset);
-
-    // --- Calibration phase: average the no-load reading ---
+    // --- Calibration phase ---
     Serial.println();
     Serial.println("=== CALIBRATION PHASE ===");
     Serial.println("Ensure NO load is connected to Channel A.");
     delay(1000);
 
-    // Use a 64-bit accumulator so the sum cannot overflow regardless of sample count.
-    uint64_t sum = 0;
-    for (int i = 0; i < kCalSamples; i++)
-    {
-        uint32_t sample = 0;
+    // Average kCalSamples no-load readings into the channel's software baseline. Check the
+    // return code so a communication failure is not silently ignored.
+    if (mySensor.autoCalibrateA(kCalSamples) != ksfTkErrOk)
+        Serial.println("Calibration failed - check the connection!");
+    else
+        Serial.println("Calibration complete. Baseline noise will be removed.");
 
-        // Demonstrate error checking: only use the sample if the read succeeded.
-        if (mySensor.getIRmsA(sample) != ksfTkErrOk)
-        {
-            Serial.println("Read failed during calibration!");
-            i--; // retry this sample
-            delay(100);
-            continue;
-        }
-
-        sum += sample;
-        delay(100);
-    }
-
-    baseline = (uint32_t)(sum / kCalSamples);
-    Serial.print("No-load baseline (raw counts): ");
-    Serial.println(baseline);
-    Serial.println("=== CALIBRATION COMPLETE ===");
-    Serial.println("You may now connect a load. Readings have the baseline removed.");
+    Serial.println("You may now connect a load.");
     Serial.println();
 }
 
 void loop()
 {
-    uint32_t raw = 0;
-
-    // Check the return code so a communication error is not mistaken for a zero reading.
-    if (mySensor.getIRmsA(raw) != ksfTkErrOk)
+    // getCurrentA() applies the calibrated baseline automatically. Check the return code so a
+    // communication error is not mistaken for a zero reading.
+    float amps = 0.0;
+    if (mySensor.getCurrentA(amps) != ksfTkErrOk)
     {
-        Serial.println("IRMS read failed!");
+        Serial.println("Current read failed!");
         delay(500);
         return;
     }
 
-    // Remove the no-load baseline in software (clamped at zero).
-    uint32_t corrected = (raw > baseline) ? (raw - baseline) : 0;
-
-    Serial.print("Raw: ");
-    Serial.print(raw);
-    Serial.print("  |  Baseline-corrected: ");
-    Serial.println(corrected);
+    Serial.print("Calibrated current (A): ");
+    Serial.println(amps, 4);
 
     delay(500);
 }

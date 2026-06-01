@@ -19,6 +19,8 @@
 
 #include "sfDevADE7953.h"
 
+#include <math.h>
+
 // ========================= Setup & Identity ===============================
 
 sfTkError_t sfDevADE7953::begin(sfTkIBus *theBus)
@@ -244,20 +246,20 @@ sfTkError_t sfDevADE7953::getDigitalGainIB(float &multiplier)
 
 // ======================= Current Measurement ==============================
 
-sfTkError_t sfDevADE7953::getIRmsA(uint32_t &value)
+sfTkError_t sfDevADE7953::getIRMSA(uint32_t &value)
 {
-    return _theBus->readRegister(kRegIRmsA, value);
+    return _theBus->readRegister(kRegIRMSA, value);
 }
 
-sfTkError_t sfDevADE7953::getIRmsB(uint32_t &value)
+sfTkError_t sfDevADE7953::getIRMSB(uint32_t &value)
 {
-    return _theBus->readRegister(kRegIRmsB, value);
+    return _theBus->readRegister(kRegIRMSB, value);
 }
 
 sfTkError_t sfDevADE7953::getCurrentA(float &amps)
 {
     uint32_t raw = 0;
-    sfTkError_t rc = getIRmsA(raw);
+    sfTkError_t rc = getIRMSA(raw);
     if (rc != ksfTkErrOk)
         return rc;
 
@@ -266,18 +268,22 @@ sfTkError_t sfDevADE7953::getCurrentA(float &amps)
     if (rc != ksfTkErrOk)
         return rc;
 
-    // Pin voltage RMS = raw / fullScaleCode * (fullScaleVrms / pgaGain)
+    // Remove the no-load baseline (if calibrated) in the squared domain. RMS values combine in
+    // quadrature, so the correct way to strip a noise floor is sqrt(reading^2 - baseline^2).
+    float corrected = removeBaseline(raw, _baselineA);
+
+    // Pin voltage RMS = corrected / fullScaleCode * (fullScaleVrms / pgaGain)
     // Secondary current  = pinVrms / burdenResistor
     // Primary current    = secondaryCurrent * ctRatio
     float fullScaleAmps = (_fullScaleVrms / pgaGainToMultiplier(gain)) / _burdenResistor * _ctRatio;
-    amps = (float)raw / _fullScaleCode * fullScaleAmps;
+    amps = corrected / _fullScaleCode * fullScaleAmps;
     return ksfTkErrOk;
 }
 
 sfTkError_t sfDevADE7953::getCurrentB(float &amps)
 {
     uint32_t raw = 0;
-    sfTkError_t rc = getIRmsB(raw);
+    sfTkError_t rc = getIRMSB(raw);
     if (rc != ksfTkErrOk)
         return rc;
 
@@ -286,8 +292,10 @@ sfTkError_t sfDevADE7953::getCurrentB(float &amps)
     if (rc != ksfTkErrOk)
         return rc;
 
+    float corrected = removeBaseline(raw, _baselineB);
+
     float fullScaleAmps = (_fullScaleVrms / pgaGainToMultiplier(gain)) / _burdenResistor * _ctRatio;
-    amps = (float)raw / _fullScaleCode * fullScaleAmps;
+    amps = corrected / _fullScaleCode * fullScaleAmps;
     return ksfTkErrOk;
 }
 
@@ -311,6 +319,96 @@ sfTkError_t sfDevADE7953::getInstantaneousIB(int32_t &value)
 }
 
 // =================== Current Conversion Calibration =======================
+
+float sfDevADE7953::removeBaseline(uint32_t reading, uint32_t baseline)
+{
+    if (baseline == 0)
+        return (float)reading;
+
+    if (reading <= baseline)
+        return 0.0f;
+
+    float r = (float)reading;
+    float b = (float)baseline;
+    return sqrtf(r * r - b * b);
+}
+
+sfTkError_t sfDevADE7953::setCurrentClamp(sfe_ade7953_clamp_t clamp)
+{
+    sfe_ade7953_pga_gain_t gain = ADE7953_PGA_GAIN_4;
+
+    switch (clamp)
+    {
+    case ADE7953_CLAMP_SCT013:
+        // 100A:50mA = 2000:1. At 100 A the 50 mA secondary across the 5.6 ohm burden is near the
+        // ADC full scale, so use unity PGA gain.
+        _ctRatio = 2000.0f;
+        gain = ADE7953_PGA_GAIN_1;
+        break;
+
+    case ADE7953_CLAMP_ECS1030:
+    default:
+        // 30A:15mA = 2000:1. The smaller secondary current benefits from 4x gain.
+        _ctRatio = 2000.0f;
+        gain = ADE7953_PGA_GAIN_4;
+        break;
+    }
+
+    sfTkError_t rc = setGainIA(gain);
+    if (rc != ksfTkErrOk)
+        return rc;
+
+    return setGainIB(gain);
+}
+
+void sfDevADE7953::setCurrentClamp(float turnsRatio)
+{
+    _ctRatio = turnsRatio;
+}
+
+sfTkError_t sfDevADE7953::autoCalibrateA(uint16_t numSamples)
+{
+    if (numSamples == 0)
+        return ksfTkErrFail;
+
+    uint64_t sum = 0;
+    for (uint16_t i = 0; i < numSamples; i++)
+    {
+        uint32_t sample = 0;
+        sfTkError_t rc = getIRMSA(sample);
+        if (rc != ksfTkErrOk)
+            return rc;
+        sum += sample;
+    }
+
+    _baselineA = (uint32_t)(sum / numSamples);
+    return ksfTkErrOk;
+}
+
+sfTkError_t sfDevADE7953::autoCalibrateB(uint16_t numSamples)
+{
+    if (numSamples == 0)
+        return ksfTkErrFail;
+
+    uint64_t sum = 0;
+    for (uint16_t i = 0; i < numSamples; i++)
+    {
+        uint32_t sample = 0;
+        sfTkError_t rc = getIRMSB(sample);
+        if (rc != ksfTkErrOk)
+            return rc;
+        sum += sample;
+    }
+
+    _baselineB = (uint32_t)(sum / numSamples);
+    return ksfTkErrOk;
+}
+
+void sfDevADE7953::clearCalibration(void)
+{
+    _baselineA = 0;
+    _baselineB = 0;
+}
 
 void sfDevADE7953::setCurrentTransformerRatio(float ratio)
 {
@@ -367,28 +465,28 @@ sfTkError_t sfDevADE7953::getOvercurrentLevel(uint32_t &level)
 
 // ====================== Calibration & Offset ==============================
 
-sfTkError_t sfDevADE7953::setIRmsOffsetA(int32_t offset)
+sfTkError_t sfDevADE7953::setIRMSOffsetA(int32_t offset)
 {
-    return _theBus->writeRegister(kRegAIRmsOS, (uint32_t)offset);
+    return _theBus->writeRegister(kRegAIRMSOS, (uint32_t)offset);
 }
 
-sfTkError_t sfDevADE7953::getIRmsOffsetA(int32_t &offset)
+sfTkError_t sfDevADE7953::getIRMSOffsetA(int32_t &offset)
 {
     uint32_t raw = 0;
-    sfTkError_t rc = _theBus->readRegister(kRegAIRmsOS, raw);
+    sfTkError_t rc = _theBus->readRegister(kRegAIRMSOS, raw);
     offset = (int32_t)raw;
     return rc;
 }
 
-sfTkError_t sfDevADE7953::setIRmsOffsetB(int32_t offset)
+sfTkError_t sfDevADE7953::setIRMSOffsetB(int32_t offset)
 {
-    return _theBus->writeRegister(kRegBIRmsOS, (uint32_t)offset);
+    return _theBus->writeRegister(kRegBIRMSOS, (uint32_t)offset);
 }
 
-sfTkError_t sfDevADE7953::getIRmsOffsetB(int32_t &offset)
+sfTkError_t sfDevADE7953::getIRMSOffsetB(int32_t &offset)
 {
     uint32_t raw = 0;
-    sfTkError_t rc = _theBus->readRegister(kRegBIRmsOS, raw);
+    sfTkError_t rc = _theBus->readRegister(kRegBIRMSOS, raw);
     offset = (int32_t)raw;
     return rc;
 }

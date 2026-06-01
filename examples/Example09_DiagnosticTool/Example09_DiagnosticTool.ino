@@ -144,7 +144,7 @@ void doZeroCalibration()
     for (int i = 0; i < NUM_SAMPLES; i++)
     {
         uint32_t sample = 0;
-        mySensor.getIRmsA(sample);
+        mySensor.getIRMSA(sample);
         sum += sample;
         delay(50);
     }
@@ -268,7 +268,7 @@ void loop()
 
     // Read raw IRMS from Channel A.
     uint32_t rawIrms = 0;
-    mySensor.getIRmsA(rawIrms);
+    mySensor.getIRMSA(rawIrms);
 
     // Apply the software zero offset (clamped at zero).
     uint32_t corrected = (rawIrms > zeroOffset) ? (rawIrms - zeroOffset) : 0;
