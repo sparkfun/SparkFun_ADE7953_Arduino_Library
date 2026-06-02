@@ -1,0 +1,49 @@
+# Doxygen configuration for the SparkFun ADE7953 Arduino Library
+# The CI workflow appends a PROJECT_NUMBER line (from git describe) before running.
+
+DOXYFILE_ENCODING      = UTF-8
+PROJECT_NAME           = "SparkFun Qwiic Current Sensor - ADE7953"
+PROJECT_BRIEF          = "Arduino Library for the SparkFun Qwiic Current Sensor (ADE7953)"
+OUTPUT_DIRECTORY       = ./docs
+CREATE_SUBDIRS         = NO
+ALLOW_UNICODE_NAMES    = NO
+OPTIMIZE_OUTPUT_FOR_C  = NO
+MARKDOWN_SUPPORT       = YES
+AUTOLINK_SUPPORT       = YES
+
+# Extraction
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+HIDE_UNDOC_MEMBERS     = NO
+JAVADOC_AUTOBRIEF      = YES
+
+# Input
+INPUT                  = src \
+                         README.md \
+                         docs
+INPUT_ENCODING         = UTF-8
+FILE_PATTERNS          = *.h *.cpp *.md
+RECURSIVE              = YES
+IMAGE_PATH             = docs/images
+USE_MDFILE_AS_MAINPAGE = README.md
+
+# HTML output
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+GENERATE_TREEVIEW      = YES
+DISABLE_INDEX          = NO
+FULL_SIDEBAR           = NO
+
+# Disable other generators
+GENERATE_LATEX         = NO
+GENERATE_XML           = NO
+GENERATE_RTF           = NO
+GENERATE_MAN           = NO
+
+# Diagrams
+HAVE_DOT               = NO
+
+# Warnings
+QUIET                  = YES
+WARN_IF_UNDOCUMENTED   = NO
