@@ -628,7 +628,7 @@ class sfDevADE7953
     float _ctRatio = 2000.0f;          ///< CT turns ratio (30A:15mA = 2000:1).
     float _burdenResistor = 5.6f;      ///< Burden resistor in ohms.
     float _fullScaleCode = 5928256.0f; ///< ADE7953 full-scale IRMS code.
-    float _fullScaleVrms = 0.35355f;   ///< Full-scale input RMS voltage (0.5 V peak / sqrt(2)).
+    float _fullScaleVRMS = 0.35355f;   ///< Full-scale input RMS voltage (0.5 V peak / sqrt(2)).
 
     // --- Software no-load baselines set by autoCalibrate, removed in the squared domain ---
     uint32_t _baselineA = 0; ///< Channel A no-load IRMS baseline (raw counts).

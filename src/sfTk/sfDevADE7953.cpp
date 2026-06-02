@@ -272,10 +272,10 @@ sfTkError_t sfDevADE7953::getCurrentA(float &amps)
     // quadrature, so the correct way to strip a noise floor is sqrt(reading^2 - baseline^2).
     float corrected = removeBaseline(raw, _baselineA);
 
-    // Pin voltage RMS = corrected / fullScaleCode * (fullScaleVrms / pgaGain)
-    // Secondary current  = pinVrms / burdenResistor
+    // Pin voltage RMS = corrected / fullScaleCode * (fullScaleVRMS / pgaGain)
+    // Secondary current  = pinVRMS / burdenResistor
     // Primary current    = secondaryCurrent * ctRatio
-    float fullScaleAmps = (_fullScaleVrms / pgaGainToMultiplier(gain)) / _burdenResistor * _ctRatio;
+    float fullScaleAmps = (_fullScaleVRMS / pgaGainToMultiplier(gain)) / _burdenResistor * _ctRatio;
     amps = corrected / _fullScaleCode * fullScaleAmps;
     return ksfTkErrOk;
 }
@@ -294,7 +294,7 @@ sfTkError_t sfDevADE7953::getCurrentB(float &amps)
 
     float corrected = removeBaseline(raw, _baselineB);
 
-    float fullScaleAmps = (_fullScaleVrms / pgaGainToMultiplier(gain)) / _burdenResistor * _ctRatio;
+    float fullScaleAmps = (_fullScaleVRMS / pgaGainToMultiplier(gain)) / _burdenResistor * _ctRatio;
     amps = corrected / _fullScaleCode * fullScaleAmps;
     return ksfTkErrOk;
 }
@@ -340,17 +340,14 @@ sfTkError_t sfDevADE7953::setCurrentClamp(sfe_ade7953_clamp_t clamp)
     switch (clamp)
     {
     case ADE7953_CLAMP_SCT013:
-        // 100A:50mA = 2000:1. At 100 A the 50 mA secondary across the 5.6 ohm burden is near the
-        // ADC full scale, so use unity PGA gain.
         _ctRatio = 2000.0f;
-        gain = ADE7953_PGA_GAIN_1;
+        gain = ADE7953_PGA_GAIN_16;
         break;
 
     case ADE7953_CLAMP_ECS1030:
     default:
-        // 30A:15mA = 2000:1. The smaller secondary current benefits from 4x gain.
         _ctRatio = 2000.0f;
-        gain = ADE7953_PGA_GAIN_4;
+        gain = ADE7953_PGA_GAIN_16;
         break;
     }
 
