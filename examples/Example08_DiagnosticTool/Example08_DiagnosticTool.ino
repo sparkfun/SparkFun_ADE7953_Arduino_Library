@@ -1,5 +1,5 @@
 /*
-  Example 09 - Diagnostic Tool
+  Example 08 - Diagnostic Tool
 
   Interactive diagnostic sketch for the ADE7953 current sensor. Provides serial commands to
   change PGA gain, toggle the high-pass filter, perform a software zero, and view raw,

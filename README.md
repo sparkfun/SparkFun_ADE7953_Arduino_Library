@@ -129,6 +129,17 @@ Using a different clamp? Enter the turns ratio directly:
 mySensor.setCurrentClamp(1800.0f); // custom turns ratio
 ```
 
+#### Per-Channel Clamps
+
+The methods above apply to both channels. To use a different clamp on each channel, use the `A` / `B` variants. For example, a 2000:1 clamp on Channel A and a direct (no transformer) measurement on Channel B:
+
+```c++
+mySensor.setCurrentClampA(ADE7953_CLAMP_ECS1030); // Channel A: 2000:1 clamp
+mySensor.setCurrentTransformerRatioB(1.0f);        // Channel B: measure directly (ratio 1:1)
+```
+
+`setCurrentClampA()` / `setCurrentClampB()` set the turns ratio and PGA gain for that channel only. `setCurrentTransformerRatioA()` / `setCurrentTransformerRatioB()` set just the ratio (leaving gain untouched) — pass `1.0` to measure that channel directly with no current transformer.
+
 ### Calibration
 
 Even with no current flowing, the ADC reports a small nonzero reading due to noise. `autoCalibrateA()` measures that no-load baseline by averaging a number of samples (taken with no current flowing) and removes it from future `getCurrentA()` readings:
@@ -203,7 +214,7 @@ The library ships with a set of examples that build from the basics to more adva
 - [Example 05 - Zero Crossing](examples/Example05_ZeroCrossing/Example05_ZeroCrossing.ino) — zero-crossing detection and line frequency
 - [Example 06 - Interrupt Pin](examples/Example06_InterruptPin/Example06_InterruptPin.ino) — overcurrent interrupt on the IRQ pin
 - [Example 07 - Auto Calibration & Error Handling](examples/Example07_CalibrationOffset/Example07_CalibrationOffset.ino) — no-load calibration and error checking
-- [Example 09 - Diagnostic Tool](examples/Example09_DiagnosticTool/Example09_DiagnosticTool.ino) — an interactive serial diagnostic sketch
+- [Example 08 - Diagnostic Tool](examples/Example08_DiagnosticTool/Example08_DiagnosticTool.ino) — an interactive serial diagnostic sketch
 
 ## Documentation
 
@@ -217,8 +228,12 @@ API documentation is generated with Doxygen and published to GitHub Pages from t
 
 If you would like to contribute to this library, please report issues and submit pull requests against the GitHub repository.
 
-## License
+## License Information
 
-This product is open source! Please see [LICENSE.md](LICENSE.md) for more information.
+This product is ***open source***!
+
+This product is licensed using the [MIT Open Source License](https://opensource.org/license/mit)
+
+Please see [LICENSE.md](LICENSE.md) for more information.
 
 - Your friends at SparkFun

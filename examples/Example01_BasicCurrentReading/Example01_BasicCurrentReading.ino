@@ -6,7 +6,7 @@
   this sketch runs a quick auto-calibration (clamp open, no load) to zero the noise
   floor before reporting current.
 
-  SparkFun Electronic
+  SparkFun Electronics
   Date: 2025
   SparkFun code, firmware, and software is released under the MIT License.
     Please see LICENSE.md for further details.

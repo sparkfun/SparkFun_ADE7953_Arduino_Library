@@ -10,7 +10,7 @@
  *
  * @author SparkFun Electronics
  * @date 2025
- * @copyright Copyright (c) 2025, SparkFun Electronics Inc. All rights reserved.
+ * @copyright Copyright (c) 2025, SparkFun Electronics Inc. This project is released under the MIT License.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -276,7 +276,7 @@ sfTkError_t sfDevADE7953::getCurrentA(float &amps)
     // Pin voltage RMS = corrected / fullScaleCode * (fullScaleVRMS / pgaGain)
     // Secondary current  = pinVRMS / burdenResistor
     // Primary current    = secondaryCurrent * ctRatio
-    float fullScaleAmps = (_fullScaleVRMS / pgaGainToMultiplier(gain)) / _burdenResistor * _ctRatio;
+    float fullScaleAmps = (_fullScaleVRMS / pgaGainToMultiplier(gain)) / _burdenResistor * _ctRatioA;
     amps = corrected / _fullScaleCode * fullScaleAmps;
     return ksfTkErrOk;
 }
@@ -295,7 +295,7 @@ sfTkError_t sfDevADE7953::getCurrentB(float &amps)
 
     float corrected = removeBaseline(raw, _baselineB);
 
-    float fullScaleAmps = (_fullScaleVRMS / pgaGainToMultiplier(gain)) / _burdenResistor * _ctRatio;
+    float fullScaleAmps = (_fullScaleVRMS / pgaGainToMultiplier(gain)) / _burdenResistor * _ctRatioB;
     amps = corrected / _fullScaleCode * fullScaleAmps;
     return ksfTkErrOk;
 }
@@ -334,23 +334,31 @@ float sfDevADE7953::removeBaseline(uint32_t reading, uint32_t baseline)
     return sqrtf(r * r - b * b);
 }
 
-sfTkError_t sfDevADE7953::setCurrentClamp(sfe_ade7953_clamp_t clamp)
+void sfDevADE7953::clampPreset(sfe_ade7953_clamp_t clamp, float &ratio, sfe_ade7953_pga_gain_t &gain)
 {
-    sfe_ade7953_pga_gain_t gain = ADE7953_PGA_GAIN_4;
-
     switch (clamp)
     {
     case ADE7953_CLAMP_SCT013:
-        _ctRatio = 2000.0f;
+        ratio = 2000.0f;
         gain = ADE7953_PGA_GAIN_16;
         break;
 
     case ADE7953_CLAMP_ECS1030:
     default:
-        _ctRatio = 2000.0f;
+        ratio = 2000.0f;
         gain = ADE7953_PGA_GAIN_16;
         break;
     }
+}
+
+sfTkError_t sfDevADE7953::setCurrentClamp(sfe_ade7953_clamp_t clamp)
+{
+    float ratio = 2000.0f;
+    sfe_ade7953_pga_gain_t gain = ADE7953_PGA_GAIN_16;
+    clampPreset(clamp, ratio, gain);
+
+    _ctRatioA = ratio;
+    _ctRatioB = ratio;
 
     sfTkError_t rc = setGainIA(gain);
     if (rc != ksfTkErrOk)
@@ -359,9 +367,40 @@ sfTkError_t sfDevADE7953::setCurrentClamp(sfe_ade7953_clamp_t clamp)
     return setGainIB(gain);
 }
 
+sfTkError_t sfDevADE7953::setCurrentClampA(sfe_ade7953_clamp_t clamp)
+{
+    float ratio = 2000.0f;
+    sfe_ade7953_pga_gain_t gain = ADE7953_PGA_GAIN_16;
+    clampPreset(clamp, ratio, gain);
+
+    _ctRatioA = ratio;
+    return setGainIA(gain);
+}
+
+sfTkError_t sfDevADE7953::setCurrentClampB(sfe_ade7953_clamp_t clamp)
+{
+    float ratio = 2000.0f;
+    sfe_ade7953_pga_gain_t gain = ADE7953_PGA_GAIN_16;
+    clampPreset(clamp, ratio, gain);
+
+    _ctRatioB = ratio;
+    return setGainIB(gain);
+}
+
 void sfDevADE7953::setCurrentClamp(float turnsRatio)
 {
-    _ctRatio = turnsRatio;
+    _ctRatioA = turnsRatio;
+    _ctRatioB = turnsRatio;
+}
+
+void sfDevADE7953::setCurrentClampA(float turnsRatio)
+{
+    _ctRatioA = turnsRatio;
+}
+
+void sfDevADE7953::setCurrentClampB(float turnsRatio)
+{
+    _ctRatioB = turnsRatio;
 }
 
 sfTkError_t sfDevADE7953::autoCalibrateA(uint16_t numSamples)
@@ -410,12 +449,33 @@ void sfDevADE7953::clearCalibration(void)
 
 void sfDevADE7953::setCurrentTransformerRatio(float ratio)
 {
-    _ctRatio = ratio;
+    _ctRatioA = ratio;
+    _ctRatioB = ratio;
+}
+
+void sfDevADE7953::setCurrentTransformerRatioA(float ratio)
+{
+    _ctRatioA = ratio;
+}
+
+void sfDevADE7953::setCurrentTransformerRatioB(float ratio)
+{
+    _ctRatioB = ratio;
 }
 
 float sfDevADE7953::getCurrentTransformerRatio(void)
 {
-    return _ctRatio;
+    return _ctRatioA;
+}
+
+float sfDevADE7953::getCurrentTransformerRatioA(void)
+{
+    return _ctRatioA;
+}
+
+float sfDevADE7953::getCurrentTransformerRatioB(void)
+{
+    return _ctRatioB;
 }
 
 void sfDevADE7953::setBurdenResistor(float ohms)

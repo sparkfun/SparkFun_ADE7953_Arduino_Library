@@ -43,10 +43,13 @@ void setup()
 
     Serial.println("ADE7953 connected!");
 
-    // Tell the library which clamp is attached so the amps conversion is correct. This sets the
-    // turns ratio and a suitable PGA gain for you. Use ADE7953_CLAMP_SCT013 for the SCT-013-000,
-    // or mySensor.setCurrentClamp(yourRatio) to enter a custom turns ratio.
-    mySensor.setCurrentClamp(ADE7953_CLAMP_ECS1030);
+    // Tell the library which clamp is attached so the amps conversion is correct. Each channel can
+    // be configured independently. Here Channel A uses a 2000:1 clamp, while Channel B measures
+    // directly (turns ratio 1:1, no current transformer).
+    //
+    // To use the same clamp on both channels, call mySensor.setCurrentClamp(ADE7953_CLAMP_ECS1030).
+    mySensor.setCurrentClampA(ADE7953_CLAMP_ECS1030); // Channel A: SparkFun ECS1030-L72 (2000:1)
+    mySensor.setCurrentTransformerRatioB(1.0f);        // Channel B: direct measurement (1:1)
 
     Serial.println();
     Serial.println("Channel A (A)\tChannel B (A)");

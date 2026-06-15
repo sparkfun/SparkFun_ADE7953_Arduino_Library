@@ -28,8 +28,14 @@ getCurrentB	KEYWORD2
 getInstantaneousIA	KEYWORD2
 getInstantaneousIB	KEYWORD2
 setCurrentClamp	KEYWORD2
+setCurrentClampA	KEYWORD2
+setCurrentClampB	KEYWORD2
 setCurrentTransformerRatio	KEYWORD2
+setCurrentTransformerRatioA	KEYWORD2
+setCurrentTransformerRatioB	KEYWORD2
 getCurrentTransformerRatio	KEYWORD2
+getCurrentTransformerRatioA	KEYWORD2
+getCurrentTransformerRatioB	KEYWORD2
 setBurdenResistor	KEYWORD2
 getBurdenResistor	KEYWORD2
 autoCalibrateA	KEYWORD2

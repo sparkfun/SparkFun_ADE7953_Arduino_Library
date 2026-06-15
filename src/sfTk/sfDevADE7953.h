@@ -330,26 +330,71 @@ class sfDevADE7953
 
     // =================== Current Conversion Calibration ===================
 
-    /// @brief Select a known current clamp and apply its turns ratio and PGA gain.
+    /// @brief Select a known current clamp and apply its turns ratio and PGA gain to both channels.
     /// @details Sets the CT ratio used by getCurrentA()/getCurrentB() and writes a suitable PGA gain
-    /// to both current channels for the board's 5.6 ohm burden resistor.
+    /// to both current channels for the board's 5.6 ohm burden resistor. To use a different clamp on
+    /// each channel, call setCurrentClampA()/setCurrentClampB() instead.
     /// @param clamp One of the supported clamps (see sfe_ade7953_clamp_t).
     /// @return ::ksfTkErrOk on success, or an error code on failure.
     sfTkError_t setCurrentClamp(sfe_ade7953_clamp_t clamp);
 
-    /// @brief Configure a custom current clamp by its turns ratio.
+    /// @brief Select a known current clamp for Channel A and apply its turns ratio and PGA gain.
+    /// @details Sets the Channel A CT ratio used by getCurrentA() and writes a suitable PGA gain to
+    /// Channel A only. Channel B is left unchanged.
+    /// @param clamp One of the supported clamps (see sfe_ade7953_clamp_t).
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t setCurrentClampA(sfe_ade7953_clamp_t clamp);
+
+    /// @brief Select a known current clamp for Channel B and apply its turns ratio and PGA gain.
+    /// @details Sets the Channel B CT ratio used by getCurrentB() and writes a suitable PGA gain to
+    /// Channel B only. Channel A is left unchanged.
+    /// @param clamp One of the supported clamps (see sfe_ade7953_clamp_t).
+    /// @return ::ksfTkErrOk on success, or an error code on failure.
+    sfTkError_t setCurrentClampB(sfe_ade7953_clamp_t clamp);
+
+    /// @brief Configure a custom current clamp on both channels by its turns ratio.
     /// @details Use this for a clamp that is not one of the presets. Only the CT ratio is changed;
     /// the PGA gain is left as-is (set it with setGainIA()/setGainIB() if needed).
     /// @param turnsRatio Turns ratio of the current transformer (e.g. 2000.0 for 30A:15mA).
     void setCurrentClamp(float turnsRatio);
 
-    /// @brief Set the CT (current transformer) turns ratio used by getCurrentA() / getCurrentB().
+    /// @brief Configure a custom current clamp on Channel A by its turns ratio.
+    /// @details Only the Channel A CT ratio is changed; the PGA gain is left as-is. Pass 1.0 to
+    /// measure Channel A directly (no current transformer).
+    /// @param turnsRatio Turns ratio of the current transformer (e.g. 2000.0 for 30A:15mA).
+    void setCurrentClampA(float turnsRatio);
+
+    /// @brief Configure a custom current clamp on Channel B by its turns ratio.
+    /// @details Only the Channel B CT ratio is changed; the PGA gain is left as-is. Pass 1.0 to
+    /// measure Channel B directly (no current transformer).
+    /// @param turnsRatio Turns ratio of the current transformer (e.g. 2000.0 for 30A:15mA).
+    void setCurrentClampB(float turnsRatio);
+
+    /// @brief Set the CT (current transformer) turns ratio used by getCurrentA() and getCurrentB().
+    /// @details Sets both channels to the same ratio. Use setCurrentTransformerRatioA() /
+    /// setCurrentTransformerRatioB() to give each channel its own ratio.
     /// @param ratio Turns ratio of the current transformer (e.g. 2000.0 for a 30A:15mA clamp).
     void setCurrentTransformerRatio(float ratio);
 
-    /// @brief Get the configured CT turns ratio.
-    /// @return The current transformer turns ratio.
+    /// @brief Set the CT turns ratio used by getCurrentA() for Channel A.
+    /// @param ratio Turns ratio of the current transformer (e.g. 2000.0 for a 30A:15mA clamp).
+    void setCurrentTransformerRatioA(float ratio);
+
+    /// @brief Set the CT turns ratio used by getCurrentB() for Channel B.
+    /// @param ratio Turns ratio of the current transformer (e.g. 2000.0 for a 30A:15mA clamp).
+    void setCurrentTransformerRatioB(float ratio);
+
+    /// @brief Get the configured CT turns ratio for Channel A.
+    /// @return The Channel A current transformer turns ratio.
     float getCurrentTransformerRatio(void);
+
+    /// @brief Get the configured CT turns ratio for Channel A.
+    /// @return The Channel A current transformer turns ratio.
+    float getCurrentTransformerRatioA(void);
+
+    /// @brief Get the configured CT turns ratio for Channel B.
+    /// @return The Channel B current transformer turns ratio.
+    float getCurrentTransformerRatioB(void);
 
     /// @brief Set the burden resistor value (in ohms) used by getCurrentA() / getCurrentB().
     /// @param ohms Burden resistor value in ohms.
@@ -618,6 +663,12 @@ class sfDevADE7953
     /// @brief Convert a PGA gain enum value to its numeric multiplier (1, 2, 4, 8, 16, 22).
     static float pgaGainToMultiplier(sfe_ade7953_pga_gain_t gain);
 
+    /// @brief Look up the turns ratio and PGA gain for a known current clamp preset.
+    /// @param clamp One of the supported clamps (see sfe_ade7953_clamp_t).
+    /// @param ratio Output reference that receives the clamp's turns ratio.
+    /// @param gain Output reference that receives the clamp's recommended PGA gain.
+    static void clampPreset(sfe_ade7953_clamp_t clamp, float &ratio, sfe_ade7953_pga_gain_t &gain);
+
     /// @brief Remove a no-load baseline from a raw RMS reading in the squared domain.
     /// @return sqrt(reading^2 - baseline^2), clamped at 0; or reading unchanged if baseline is 0.
     static float removeBaseline(uint32_t reading, uint32_t baseline);
@@ -625,7 +676,8 @@ class sfDevADE7953
     sfTkIBus *_theBus; ///< Pointer to the communication bus device.
 
     // --- Current-to-amps conversion parameters (sensible defaults for the Qwiic board) ---
-    float _ctRatio = 2000.0f;          ///< CT turns ratio (30A:15mA = 2000:1).
+    float _ctRatioA = 2000.0f;         ///< Channel A CT turns ratio (30A:15mA = 2000:1).
+    float _ctRatioB = 2000.0f;         ///< Channel B CT turns ratio (30A:15mA = 2000:1).
     float _burdenResistor = 5.6f;      ///< Burden resistor in ohms.
     float _fullScaleCode = 5928256.0f; ///< ADE7953 full-scale IRMS code.
     float _fullScaleVRMS = 0.35355f;   ///< Full-scale input RMS voltage (0.5 V peak / sqrt(2)).

@@ -4,6 +4,7 @@
 DOXYFILE_ENCODING      = UTF-8
 PROJECT_NAME           = "SparkFun Qwiic Current Sensor - ADE7953"
 PROJECT_BRIEF          = "Arduino Library for the SparkFun Qwiic Current Sensor (ADE7953)"
+PROJECT_LOGO           = ./docs/images/sfe_flame.png
 OUTPUT_DIRECTORY       = ./docs
 CREATE_SUBDIRS         = NO
 ALLOW_UNICODE_NAMES    = NO
@@ -34,6 +35,16 @@ HTML_OUTPUT            = html
 GENERATE_TREEVIEW      = YES
 DISABLE_INDEX          = NO
 FULL_SIDEBAR           = NO
+
+# SparkFun doxygen-awesome theme (header, stylesheets, color scheme)
+HTML_HEADER            = ./docs/doxygen/doxygen-custom/header.html
+HTML_EXTRA_STYLESHEET  = docs/doxygen/doxygen-awesome-css/doxygen-awesome.css \
+                         docs/doxygen/doxygen-awesome-css/doxygen-awesome-sidebar-only.css \
+                         docs/doxygen/doxygen-custom/custom.css
+HTML_COLORSTYLE        = AUTO_LIGHT
+HTML_COLORSTYLE_HUE    = 209
+HTML_COLORSTYLE_SAT    = 255
+HTML_COLORSTYLE_GAMMA  = 113
 
 # Disable other generators
 GENERATE_LATEX         = NO
