@@ -4,13 +4,13 @@
   Demonstrates how to configure the PGA (Programmable Gain Amplifier) and the digital
   (fine) gain on Channel A.
 
-  The PGA gain is set based on the shunt resistor on the board (4x is the default for the
-  5.6 ohm shunt). Available PGA gain settings:
+  The PGA gain controls the amplifier sensitivity. 16x is the default for CT clamp use.
+  Available PGA gain settings:
     ADE7953_PGA_GAIN_1   (1x)
     ADE7953_PGA_GAIN_2   (2x)
-    ADE7953_PGA_GAIN_4   (4x)  <-- default for this board
+    ADE7953_PGA_GAIN_4   (4x)
     ADE7953_PGA_GAIN_8   (8x)
-    ADE7953_PGA_GAIN_16  (16x)
+    ADE7953_PGA_GAIN_16  (16x) <-- default
     ADE7953_PGA_GAIN_22  (22x, current channels only)
 
   The digital gain provides fine-tuning on top of the PGA. This example sets it with a
@@ -80,7 +80,7 @@ void setup()
     Serial.println("ADE7953 connected!");
     Serial.println();
 
-    // Read the current PGA gain on Channel A (set to 4x by begin()).
+    // Read the current PGA gain on Channel A (set to 16x by begin()).
     sfe_ade7953_pga_gain_t currentGain;
     mySensor.getGainIA(currentGain);
     Serial.print("PGA gain (Channel A): ");

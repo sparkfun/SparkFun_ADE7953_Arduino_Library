@@ -2,10 +2,11 @@
   Example 01 - Basic Current Reading
 
   The simplest way to read current from the SparkFun Qwiic Current Sensor (ADE7953).
-  begin() configures sensible defaults (PGA gain and high-pass filter) for you, so all
-  this sketch has to do is ask for the current in amps.
+  begin() configures 16x PGA gain and enables the high-pass filter. After connecting,
+  this sketch runs a quick auto-calibration (clamp open, no load) to zero the noise
+  floor before reporting current.
 
-  SparkFun Electronics
+  SparkFun Electronic
   Date: 2025
   SparkFun code, firmware, and software is released under the MIT License.
     Please see LICENSE.md for further details.
@@ -42,6 +43,13 @@ void setup()
     }
 
     Serial.println("ADE7953 connected!");
+
+    // Zero the noise floor. Make sure the CT clamp is open (no current flowing) before
+    // this runs. The library subtracts this baseline in the quadrature domain so the
+    // reading returns 0 A when there is no load.
+    Serial.println("Calibrating baseline — keep CT clamp open with no current flowing...");
+    mySensor.autoCalibrateA(50);
+    Serial.println("Calibration done. Reading current...");
 }
 
 void loop()
@@ -51,9 +59,9 @@ void loop()
     mySensor.getCurrentA(amps);
 
     // Print the current.
-    Serial.print("Current (A): ");
+    //Serial.print("Current: ");
     Serial.println(amps, 4);
 
     // Slow things down so we are not spamming the output.
-    delay(1000);
+    delay(250);
 }

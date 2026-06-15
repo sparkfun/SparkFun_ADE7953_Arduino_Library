@@ -11,9 +11,9 @@
   Serial Commands (send via Serial Monitor, line ending = Newline):
     g1    - Set PGA gain to 1x
     g2    - Set PGA gain to 2x
-    g3    - Set PGA gain to 4x  (default)
+    g3    - Set PGA gain to 4x
     g4    - Set PGA gain to 8x
-    g5    - Set PGA gain to 16x
+    g5    - Set PGA gain to 16x (default)
     z     - Zero calibration (averages 50 samples as a software baseline)
     r     - Reset zero offset to 0
     h     - Toggle HPF (high-pass filter) on/off
@@ -107,9 +107,9 @@ void printHelp()
     Serial.println(F("\n===== ADE7953 Diagnostic Commands ====="));
     Serial.println(F("  g1    PGA gain 1x"));
     Serial.println(F("  g2    PGA gain 2x"));
-    Serial.println(F("  g3    PGA gain 4x  (default)"));
+    Serial.println(F("  g3    PGA gain 4x"));
     Serial.println(F("  g4    PGA gain 8x"));
-    Serial.println(F("  g5    PGA gain 16x"));
+    Serial.println(F("  g5    PGA gain 16x (default)"));
     Serial.println(F("  z     Zero calibration"));
     Serial.println(F("  r     Reset zero offset"));
     Serial.println(F("  h     Toggle HPF on/off"));

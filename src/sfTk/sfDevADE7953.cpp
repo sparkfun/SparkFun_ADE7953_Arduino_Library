@@ -57,13 +57,14 @@ sfTkError_t sfDevADE7953::applyDefaultConfig(void)
     if (rc != ksfTkErrOk)
         return rc;
 
-    // Default the current channels to 4x gain, matching the 5.6 ohm shunt on the Qwiic board, so a
-    // basic sketch works without any extra configuration.
-    rc = setGainIA(ADE7953_PGA_GAIN_4);
+    // Default the current channels to 16x gain for maximum sensitivity with a CT clamp. A basic
+    // sketch should call autoCalibrateA()/autoCalibrateB() at startup (clamp open, no load) to
+    // zero the noise floor before reading current.
+    rc = setGainIA(ADE7953_PGA_GAIN_16);
     if (rc != ksfTkErrOk)
         return rc;
 
-    rc = setGainIB(ADE7953_PGA_GAIN_4);
+    rc = setGainIB(ADE7953_PGA_GAIN_16);
     if (rc != ksfTkErrOk)
         return rc;
 
