@@ -222,7 +222,7 @@ API documentation is generated with Doxygen and published to GitHub Pages from t
 
 ## Products That Use This Library
 
-- [SparkFun Qwiic Current Sensor - ADE7953](https://www.sparkfun.com/sparkfun-qwiic-current-sensor.html)
+- [SparkFun Qwiic Current Sensor - ADE7953](https://www.sparkfun.com/sparkfun-non-invasive-current-sensor-ade7953-qwiic.html)
 
 ## Contributing
 
