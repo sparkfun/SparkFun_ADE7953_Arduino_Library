@@ -1,10 +1,12 @@
 /*
   Example 02 - Dual Channel Current
 
-  This example reads the RMS current from both Channel A and Channel B
-  simultaneously and prints them side by side. Channel A is the primary
-  CT clamp input on the Qwiic connector. Channel B is available via the
-  optional pinout headers on the board.
+  Reads the RMS current from both Channel A and Channel B and prints them side by side.
+  Channel A is the primary CT clamp input on the Qwiic connector. Channel B is available
+  via the optional pinout headers on the board.
+
+  begin() configures default gain on both channels for you, so this sketch just reads
+  the current in amps from each channel.
 
   SparkFun Electronics
   Date: 2025
@@ -16,7 +18,7 @@
   QWIIC --> QWIIC
   (Optional) Current source --> Channel B header pins
 
-  Serial.print it out at 115200 baud to serial monitor.
+  Open the Serial Monitor at 115200 baud.
 
   Feel like supporting our work? Buy a board from SparkFun!
   https://www.sparkfun.com/sparkfun-qwiic-current-sensor.html
@@ -29,41 +31,42 @@ SfeADE7953ArdI2C mySensor;
 void setup()
 {
     Serial.begin(115200);
-    delay(1000);
-    Serial.println("ADE7953 Example 02 - Dual Channel Current");
+    Serial.println("SparkFun ADE7953 Example 2 - Dual Channel Current");
 
     Wire.begin();
 
-    if (!mySensor.begin())
+    while (mySensor.begin() == false)
     {
-        Serial.println("ADE7953 not found. Please check wiring. Freezing...");
-        while (1)
-            delay(1000);
+        Serial.println("ADE7953 not connected, check your wiring!");
+        delay(1000);
     }
 
     Serial.println("ADE7953 connected!");
 
-    // Set PGA gain to 4x on both channels for the 5.6 ohm shunt resistor.
-    mySensor.setGainIA(ADE7953_PGA_GAIN_4);
-    mySensor.setGainIB(ADE7953_PGA_GAIN_4);
+    // Tell the library which clamp is attached so the amps conversion is correct. Each channel can
+    // be configured independently. Here Channel A uses a 2000:1 clamp, while Channel B measures
+    // directly (turns ratio 1:1, no current transformer).
+    //
+    // To use the same clamp on both channels, call mySensor.setCurrentClamp(ADE7953_CLAMP_ECS1030).
+    mySensor.setCurrentClampA(ADE7953_CLAMP_ECS1030); // Channel A: SparkFun ECS1030-L72 (2000:1)
+    mySensor.setCurrentTransformerRatioB(1.0f);        // Channel B: direct measurement (1:1)
 
-    Serial.println("Both channels configured at 4x gain.");
     Serial.println();
-
-    // Print column headers.
-    Serial.println("Channel A (raw)\tChannel B (raw)");
-    Serial.println("---------------\t---------------");
+    Serial.println("Channel A (A)\tChannel B (A)");
+    Serial.println("-------------\t-------------");
 }
 
 void loop()
 {
-    // Read the RMS current from both channels.
-    uint32_t irmsA = mySensor.getIRmsA();
-    uint32_t irmsB = mySensor.getIRmsB();
+    // Read the RMS current from both channels in amps.
+    float ampsA = 0.0;
+    float ampsB = 0.0;
+    mySensor.getCurrentA(ampsA);
+    mySensor.getCurrentB(ampsB);
 
-    Serial.print(irmsA);
+    Serial.print(ampsA, 4);
     Serial.print("\t\t");
-    Serial.println(irmsB);
+    Serial.println(ampsB, 4);
 
     delay(500);
 }

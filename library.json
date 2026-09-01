@@ -1,0 +1,16 @@
+{
+    "name": "SparkFun ADE7953 Arduino Library",
+    "version": "1.0.0",
+    "author": "SparkFun Electronics",
+    "keywords": "Sensor, current, energy, ADE7953, Qwiic",
+    "description": "An Arduino library for the SparkFun Qwiic Current Sensor (ADE7953), providing clamp-on current measurements.",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/sparkfun/SparkFun_ADE7953_Arduino_Library"
+    },
+    "dependencies": {
+        "sparkfun/SparkFun Toolkit": ">=1.2.0"
+    },
+    "frameworks": "arduino",
+    "platforms": "*"
+}

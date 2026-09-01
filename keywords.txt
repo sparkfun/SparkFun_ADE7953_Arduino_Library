@@ -1,0 +1,107 @@
+# Syntax Coloring Map for SparkFun ADE7953 Arduino Library
+
+# Datatypes / Classes (KEYWORD1)
+SfeADE7953ArdI2C	KEYWORD1
+sfDevADE7953	KEYWORD1
+
+# Methods and Functions (KEYWORD2)
+begin	KEYWORD2
+isConnected	KEYWORD2
+getVersion	KEYWORD2
+reset	KEYWORD2
+setWriteProtect	KEYWORD2
+getWriteProtect	KEYWORD2
+setGainIA	KEYWORD2
+getGainIA	KEYWORD2
+setGainIB	KEYWORD2
+getGainIB	KEYWORD2
+setGainV	KEYWORD2
+getGainV	KEYWORD2
+setDigitalGainIA	KEYWORD2
+getDigitalGainIA	KEYWORD2
+setDigitalGainIB	KEYWORD2
+getDigitalGainIB	KEYWORD2
+getIRMSA	KEYWORD2
+getIRMSB	KEYWORD2
+getCurrentA	KEYWORD2
+getCurrentB	KEYWORD2
+getInstantaneousIA	KEYWORD2
+getInstantaneousIB	KEYWORD2
+setCurrentClamp	KEYWORD2
+setCurrentClampA	KEYWORD2
+setCurrentClampB	KEYWORD2
+setCurrentTransformerRatio	KEYWORD2
+setCurrentTransformerRatioA	KEYWORD2
+setCurrentTransformerRatioB	KEYWORD2
+getCurrentTransformerRatio	KEYWORD2
+getCurrentTransformerRatioA	KEYWORD2
+getCurrentTransformerRatioB	KEYWORD2
+setBurdenResistor	KEYWORD2
+getBurdenResistor	KEYWORD2
+autoCalibrateA	KEYWORD2
+autoCalibrateB	KEYWORD2
+clearCalibration	KEYWORD2
+getPeakIA	KEYWORD2
+getPeakIB	KEYWORD2
+readAndResetPeakIA	KEYWORD2
+readAndResetPeakIB	KEYWORD2
+setOvercurrentLevel	KEYWORD2
+getOvercurrentLevel	KEYWORD2
+setIRMSOffsetA	KEYWORD2
+getIRMSOffsetA	KEYWORD2
+setIRMSOffsetB	KEYWORD2
+getIRMSOffsetB	KEYWORD2
+setZXISourceChannel	KEYWORD2
+getZXISourceChannel	KEYWORD2
+setZXEdge	KEYWORD2
+getZXEdge	KEYWORD2
+enableZXLPF	KEYWORD2
+enableHPF	KEYWORD2
+isHPFEnabled	KEYWORD2
+getPeriod	KEYWORD2
+setInterruptEnableA	KEYWORD2
+getInterruptEnableA	KEYWORD2
+getInterruptStatusA	KEYWORD2
+readAndResetInterruptStatusA	KEYWORD2
+setInterruptEnableB	KEYWORD2
+getInterruptEnableB	KEYWORD2
+getInterruptStatusB	KEYWORD2
+readAndResetInterruptStatusB	KEYWORD2
+setNoLoadDisable	KEYWORD2
+getNoLoadDisable	KEYWORD2
+setLineCycleMode	KEYWORD2
+getLineCycleMode	KEYWORD2
+setLineCycleCount	KEYWORD2
+getLineCycleCount	KEYWORD2
+setSagCycles	KEYWORD2
+getSagCycles	KEYWORD2
+setSagLevel	KEYWORD2
+getSagLevel	KEYWORD2
+getLastOperation	KEYWORD2
+getLastAddress	KEYWORD2
+getLastData8	KEYWORD2
+getLastData16	KEYWORD2
+getLastData32	KEYWORD2
+
+# Structures / Types (KEYWORD3)
+sfe_ade7953_pga_gain_t	KEYWORD3
+sfe_ade7953_zx_edge_t	KEYWORD3
+sfe_ade7953_clamp_t	KEYWORD3
+sfe_ade7953_config_reg_t	KEYWORD3
+sfe_ade7953_lcycmode_reg_t	KEYWORD3
+sfe_ade7953_disnoload_reg_t	KEYWORD3
+sfe_ade7953_irq_reg_t	KEYWORD3
+
+# Constants (LITERAL1)
+ADE7953_PGA_GAIN_1	LITERAL1
+ADE7953_PGA_GAIN_2	LITERAL1
+ADE7953_PGA_GAIN_4	LITERAL1
+ADE7953_PGA_GAIN_8	LITERAL1
+ADE7953_PGA_GAIN_16	LITERAL1
+ADE7953_PGA_GAIN_22	LITERAL1
+ADE7953_ZX_EDGE_BOTH	LITERAL1
+ADE7953_ZX_EDGE_NEGATIVE	LITERAL1
+ADE7953_ZX_EDGE_POSITIVE	LITERAL1
+ADE7953_ZX_EDGE_BOTH_ALT	LITERAL1
+ADE7953_CLAMP_ECS1030	LITERAL1
+ADE7953_CLAMP_SCT013	LITERAL1
